@@ -22,6 +22,8 @@
 #include <chrono>
 #include <thread>
 
+SDL_Event e;
+
 constexpr bool bUseValidationLayers = true;
 
 HexagonEngine* loadedEngine = nullptr;
@@ -63,8 +65,8 @@ void HexagonEngine::init()
 
     init_sampler();
 
-    _images.push_back(loadTexture("dirt.jpg"));
-    _images.push_back(loadTexture("grass.jpg"));
+    _images.push_back(loadTexture("assets/dirt.jpg"));
+    _images.push_back(loadTexture("assets/grass.jpg"));
 
     _mainDeletionQueue.push_function([&]() {
         for (auto& image : _images)
@@ -74,6 +76,8 @@ void HexagonEngine::init()
     });
 
     camera = Camera(glm::vec3(0, 0, 0));
+
+    SDL_StartTextInput();
 
     // everything went fine
     _isInitialized = true;
@@ -113,6 +117,20 @@ void HexagonEngine::cleanup()
 
 void HexagonEngine::draw()
 {
+    void* objectData;
+    vmaMapMemory(_allocator, get_current_frame().matricesBuffer.allocation, &objectData);
+
+    glm::mat4* objectSSBO = (glm::mat4*)objectData;
+
+    for (int i = 0; i < modelMatrices.size(); i++)
+    {
+        glm::mat4& matrix = modelMatrices[i];
+        objectSSBO[i] = matrix;
+    }
+
+    vmaUnmapMemory(_allocator, get_current_frame().matricesBuffer.allocation);
+
+
     VK_CHECK(vkWaitForFences(_device, 1, &get_current_frame()._renderFence, true, 1000000000));
 
     get_current_frame()._deletionQueue.flush();
@@ -275,105 +293,101 @@ void HexagonEngine::draw_mesh(VkCommandBuffer cmd)
     GPUDrawPushConstants push_constants;
     push_constants.worldMatrix = projection * view;
     push_constants.vertexBuffer = block.buffers.vertexBufferAddress;
-    push_constants.matrixBuffer = block.buffers.matrixBufferAddress;
+    push_constants.matrixBuffer = get_current_frame().matricesBufferAddress;
 
     vkCmdPushConstants(cmd, _meshPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &push_constants);
+
     vkCmdBindIndexBuffer(cmd, block.buffers.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
 
-    vkCmdDrawIndexed(cmd, 72, 37, 0, 0, 0);        
+    vkCmdDrawIndexed(cmd, 72, modelMatrices.size(), 0, 0, 0);
 
     vkCmdEndRendering(cmd);
 }
 
-void HexagonEngine::run()
+void HexagonEngine::render()
 {
-    SDL_Event e;
-    bool bQuit = false;
+    //std::cout << (1.0f / deltaTime) << std::endl;
 
-    SDL_StartTextInput();
+    float currentFrame = (float)SDL_GetTicks() / 1000.0f;
+    deltaTime = currentFrame - lastFrame;
+    lastFrame = currentFrame;
 
-    // main loop
-    while (!bQuit) {
-        float currentFrame = (float)SDL_GetTicks() / 1000.0f;
-        deltaTime = currentFrame - lastFrame;
-        lastFrame = currentFrame;
+    keyboardInput();
+    mouseInput();
 
-        keyboardInput();
-        mouseInput();
+    // Handle events on queue
+    while (SDL_PollEvent(&e) != 0) {
+        // close the window when user alt-f4s or clicks the X button
+        if (e.type == SDL_QUIT)
+            bQuit = true;
 
-        // Handle events on queue
-        while (SDL_PollEvent(&e) != 0) {
-            // close the window when user alt-f4s or clicks the X button
-            if (e.type == SDL_QUIT)
-                bQuit = true;
-
-            if (e.type == SDL_KEYDOWN)
+        if (e.type == SDL_KEYDOWN)
+        {
+            if (e.key.keysym.sym == SDLK_ESCAPE)
             {
-                if (e.key.keysym.sym == SDLK_ESCAPE) 
-                {
-                    bQuit = true;
-                }
-                else if (e.key.keysym.sym == SDLK_m)
-                {
-                    if (SDL_GetRelativeMouseMode() == SDL_TRUE)
-                        SDL_SetRelativeMouseMode(SDL_FALSE);
-                    else
-                        SDL_SetRelativeMouseMode(SDL_TRUE);
-                    
-                    
-                }
+                bQuit = true;
             }
+            else if (e.key.keysym.sym == SDLK_m)
+            {
+                if (SDL_GetRelativeMouseMode() == SDL_TRUE)
+                    SDL_SetRelativeMouseMode(SDL_FALSE);
+                else
+                    SDL_SetRelativeMouseMode(SDL_TRUE);
 
-            if (e.type == SDL_WINDOWEVENT) {
-                if (e.window.event == SDL_WINDOWEVENT_MINIMIZED) {
-                    stop_rendering = true;
-                }
-                if (e.window.event == SDL_WINDOWEVENT_RESTORED) {
-                    stop_rendering = false;
-                }
+
             }
-
-            ImGui_ImplSDL2_ProcessEvent(&e);
         }
 
-        // do not draw if we are minimized
-        if (stop_rendering) {
-            // throttle the speed to avoid the endless spinning
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            continue;
+        if (e.type == SDL_WINDOWEVENT) {
+            if (e.window.event == SDL_WINDOWEVENT_MINIMIZED) {
+                stop_rendering = true;
+            }
+            if (e.window.event == SDL_WINDOWEVENT_RESTORED) {
+                stop_rendering = false;
+            }
         }
 
-        if (resize_requested) {
-            resize_swapchain();
-        }
-
-        ImGui_ImplVulkan_NewFrame();
-        ImGui_ImplSDL2_NewFrame();
-        ImGui::NewFrame();
-
-        if (ImGui::Begin("background")) {
-
-            ImGui::SliderFloat("Render Scale", &renderScale, 0.3f, 1.f);
-
-            ComputeEffect& selected = backgroundEffects[currentBackgroundEffect];
-
-            ImGui::Text("Selected effect: ", selected.name);
-
-            ImGui::SliderInt("Effect Index", &currentBackgroundEffect, 0, backgroundEffects.size() - 1);
-
-            ImGui::InputFloat4("data1", (float*)&selected.data.data1);
-            ImGui::InputFloat4("data2", (float*)&selected.data.data2);
-            ImGui::InputFloat4("data3", (float*)&selected.data.data3);
-            ImGui::InputFloat4("data4", (float*)&selected.data.data4);
-        }
-        ImGui::End();
-
-        //make imgui calculate internal draw structures
-        ImGui::Render();
-
-        //our draw function
-        draw();
+        ImGui_ImplSDL2_ProcessEvent(&e);
     }
+
+    // do not draw if we are minimized
+    if (stop_rendering) {
+        // throttle the speed to avoid the endless spinning
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        return;
+    }
+
+    if (resize_requested) {
+        resize_swapchain();
+    }
+
+    ImGui_ImplVulkan_NewFrame();
+    ImGui_ImplSDL2_NewFrame();
+    ImGui::NewFrame();
+
+    if (ImGui::Begin("background")) {
+
+        ImGui::SliderFloat("Render Scale", &renderScale, 0.3f, 1.f);
+
+        ComputeEffect& selected = backgroundEffects[currentBackgroundEffect];
+
+        ImGui::Text("Selected effect: ", selected.name);
+
+        ImGui::SliderInt("Effect Index", &currentBackgroundEffect, 0, backgroundEffects.size() - 1);
+
+        ImGui::InputFloat4("data1", (float*)&selected.data.data1);
+        ImGui::InputFloat4("data2", (float*)&selected.data.data2);
+        ImGui::InputFloat4("data3", (float*)&selected.data.data3);
+        ImGui::InputFloat4("data4", (float*)&selected.data.data4);
+    }
+    ImGui::End();
+
+    //make imgui calculate internal draw structures
+    ImGui::Render();
+
+    //update_matrix_buffer();
+    //our draw function
+    draw();
 }
 
 void HexagonEngine::init_vulkan()
@@ -630,6 +644,21 @@ void HexagonEngine::init_descriptors()
             });
     }
 
+    for (int i = 0; i < FRAME_OVERLAP; i++) {
+        
+        const size_t matricesBufferSize = MAX_OBJECT_COUNT * sizeof(glm::mat4);
+
+        _frames[i].matricesBuffer = create_buffer(matricesBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+            VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+        VkBufferDeviceAddressInfo deviceAdressInfoM{ .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,.buffer = _frames[i].matricesBuffer.buffer };
+        _frames[i].matricesBufferAddress = vkGetBufferDeviceAddress(_device, &deviceAdressInfoM);
+
+        _mainDeletionQueue.push_function([&, i]() {
+            destroy_buffer(_frames[i].matricesBuffer);
+            });
+    }
+
 }
 
 void HexagonEngine::init_pipelines()
@@ -819,11 +848,10 @@ void HexagonEngine::destroy_buffer(const AllocatedBuffer& buffer)
     vmaDestroyBuffer(_allocator, buffer.buffer, buffer.allocation);
 }
 
-GPUMeshBuffers HexagonEngine::uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices, std::span<glm::mat4> modelMatrices)
+GPUMeshBuffers HexagonEngine::uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices)
 {
     const size_t vertexBufferSize = vertices.size() * sizeof(Vertex);
     const size_t indexBufferSize = indices.size() * sizeof(uint32_t);
-    const size_t matrixBufferSize = modelMatrices.size() * sizeof(glm::mat4);
 
     GPUMeshBuffers newSurface;
 
@@ -839,15 +867,8 @@ GPUMeshBuffers HexagonEngine::uploadMesh(std::span<uint32_t> indices, std::span<
     newSurface.indexBuffer = create_buffer(indexBufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         VMA_MEMORY_USAGE_GPU_ONLY);
 
-    //create matrix buffer
-    newSurface.matrixBuffer = create_buffer(matrixBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-        VMA_MEMORY_USAGE_GPU_ONLY);
-
-    VkBufferDeviceAddressInfo deviceAdressInfoM{ .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,.buffer = newSurface.matrixBuffer.buffer };
-    newSurface.matrixBufferAddress = vkGetBufferDeviceAddress(_device, &deviceAdressInfoM);
-
     //staging
-    AllocatedBuffer staging = create_buffer(vertexBufferSize + indexBufferSize + matrixBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY);
+    AllocatedBuffer staging = create_buffer(vertexBufferSize + indexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY);
 
     void* data = staging.allocation->GetMappedData();
 
@@ -855,8 +876,6 @@ GPUMeshBuffers HexagonEngine::uploadMesh(std::span<uint32_t> indices, std::span<
     memcpy(data, vertices.data(), vertexBufferSize);
     // copy index buffer
     memcpy((char*)data + vertexBufferSize, indices.data(), indexBufferSize);
-
-    memcpy((char*)data + vertexBufferSize + indexBufferSize, modelMatrices.data(), matrixBufferSize);
 
     immediate_submit([&](VkCommandBuffer cmd) {
         VkBufferCopy vertexCopy{ 0 };
@@ -872,13 +891,6 @@ GPUMeshBuffers HexagonEngine::uploadMesh(std::span<uint32_t> indices, std::span<
         indexCopy.size = indexBufferSize;
 
         vkCmdCopyBuffer(cmd, staging.buffer, newSurface.indexBuffer.buffer, 1, &indexCopy);
-
-        VkBufferCopy matrixCopy{ 0 };
-        matrixCopy.dstOffset = 0;
-        matrixCopy.srcOffset = vertexBufferSize + indexBufferSize;
-        matrixCopy.size = matrixBufferSize;
-
-        vkCmdCopyBuffer(cmd, staging.buffer, newSurface.matrixBuffer.buffer, 1, &matrixCopy);
         });
 
     destroy_buffer(staging);
@@ -977,15 +989,14 @@ void HexagonEngine::init_mesh_pipeline()
         });
 }
 
-void HexagonEngine::create_mesh(std::span<uint32_t> indices, std::span<Vertex> vertices, std::span<glm::mat4> modelMatrices) {
+void HexagonEngine::create_mesh(std::span<uint32_t> indices, std::span<Vertex> vertices) {
 
   
-    block.buffers = uploadMesh(indices, vertices, modelMatrices);
+    block.buffers = uploadMesh(indices, vertices);
 
     _mainDeletionQueue.push_function([&]() {
         destroy_buffer(block.buffers.indexBuffer);
         destroy_buffer(block.buffers.vertexBuffer);
-        destroy_buffer(block.buffers.matrixBuffer);
         });
 }
 
@@ -1067,12 +1078,16 @@ AllocatedImage HexagonEngine::create_image(void* data, VkExtent3D size, VkFormat
         vkCmdCopyBufferToImage(cmd, uploadbuffer.buffer, new_image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
             &copyRegion);
 
-        VKUtil::transition_image(cmd, new_image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        if (mipmapped) {
+            VKUtil::generate_mipmaps(cmd, new_image.image, VkExtent2D{ new_image.imageExtent.width,new_image.imageExtent.height });
+        }
+        else {
+            VKUtil::transition_image(cmd, new_image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        }
         });
 
     destroy_buffer(uploadbuffer);
-
     return new_image;
 }
 
@@ -1125,7 +1140,7 @@ AllocatedImage HexagonEngine::loadTexture(const char* texturePath)
         imagesize.height = height;
         imagesize.depth = 1;
 
-        newImage = create_image(data, imagesize, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT, false);
+        newImage = create_image(data, imagesize, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT, true);
 
         stbi_image_free(data);
     }
@@ -1149,10 +1164,77 @@ void HexagonEngine::init_sampler()
 
     sampl.magFilter = VK_FILTER_LINEAR;
     sampl.minFilter = VK_FILTER_LINEAR;
+    sampl.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    sampl.minLod = 0.0f;
+    sampl.maxLod = static_cast<float>(11);
+    sampl.mipLodBias = 0.0f;
     vkCreateSampler(_device, &sampl, nullptr, &_defaultSamplerLinear);
 
     _mainDeletionQueue.push_function([&]() {
         vkDestroySampler(_device, _defaultSamplerNearest, nullptr);
         vkDestroySampler(_device, _defaultSamplerLinear, nullptr);
         });
+}
+
+void HexagonEngine::update_matrix_buffer()
+{
+    if (matrixBuffer.matrixBuffer.buffer == VK_NULL_HANDLE)
+        return;
+
+    const size_t currentBufferSize = modelMatrices.size() * sizeof(glm::mat4);
+
+    AllocatedBuffer staging = create_buffer(currentBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY);
+
+    void* data = staging.allocation->GetMappedData();
+
+    memcpy(data, modelMatrices.data(), currentBufferSize);
+
+    immediate_submit([&](VkCommandBuffer cmd) {
+        VkBufferCopy matrixCopy{ 0 };
+        matrixCopy.dstOffset = 0;
+        matrixCopy.srcOffset = 0;
+        matrixCopy.size = currentBufferSize;
+
+        vkCmdCopyBuffer(cmd, staging.buffer, matrixBuffer.matrixBuffer.buffer, 1, &matrixCopy);
+        });
+
+    destroy_buffer(staging);
+}
+
+void HexagonEngine::upload_matrix_buffer()
+{
+    const size_t matrixBufferSize = MAX_OBJECT_COUNT * sizeof(glm::mat4);
+    const size_t currentBufferSize = modelMatrices.size() * sizeof(glm::mat4);
+
+    matrixBuffer.matrixBuffer = create_buffer(matrixBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+        VMA_MEMORY_USAGE_GPU_ONLY);
+
+    VkBufferDeviceAddressInfo deviceAdressInfoM{ .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,.buffer = matrixBuffer.matrixBuffer.buffer };
+    matrixBuffer.matrixBufferAddress = vkGetBufferDeviceAddress(_device, &deviceAdressInfoM);
+
+    AllocatedBuffer staging = create_buffer(currentBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY);
+
+    void* data = staging.allocation->GetMappedData();
+
+    memcpy(data, modelMatrices.data(), currentBufferSize);
+
+    immediate_submit([&](VkCommandBuffer cmd) {
+        VkBufferCopy matrixCopy{ 0 };
+        matrixCopy.dstOffset = 0;
+        matrixCopy.srcOffset = 0;
+        matrixCopy.size = currentBufferSize;
+
+        vkCmdCopyBuffer(cmd, staging.buffer, matrixBuffer.matrixBuffer.buffer, 1, &matrixCopy);
+        });
+
+    _mainDeletionQueue.push_function([&]() {
+        destroy_buffer(matrixBuffer.matrixBuffer);
+        });
+
+    destroy_buffer(staging);
+}
+
+Camera* HexagonEngine::get_camera()
+{
+    return &camera;
 }

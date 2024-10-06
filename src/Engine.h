@@ -46,6 +46,9 @@ struct FrameData {
 
 	DeletionQueue _deletionQueue;
 	DescriptorAllocatorGrowable _frameDescriptors;
+
+	AllocatedBuffer matricesBuffer;
+	VkDeviceAddress matricesBufferAddress;
 };
 
 struct GPUSceneData {
@@ -61,8 +64,14 @@ constexpr unsigned int FRAME_OVERLAP = 2;
 
 class HexagonEngine {
 public:
+	bool bQuit = false;
+
+	std::vector<glm::mat4> modelMatrices;
+	std::vector<Light> lights;
 
 	RenderObject block;
+
+	GPUMatrixBuffer matrixBuffer;
 
 	Camera camera;
 
@@ -131,7 +140,7 @@ public:
 	VkSurfaceKHR _surface;// Vulkan window surface
 
 	bool _isInitialized{ false };
-	int _frameNumber{ 0 };
+	unsigned long long int _frameNumber{ 0 };
 	bool stop_rendering{ false };
 	VkExtent2D _windowExtent{ 1920 , 1080 };
 
@@ -152,15 +161,14 @@ public:
 
 	void draw_mesh(VkCommandBuffer cmd);
 
-	//run main loop
-	void run();
+	void render();
 
 	void init_vulkan();
 	void init_swapchain();
 	void init_commands();
 	void init_sync_structures();
 
-	void create_mesh(std::span<uint32_t> indices, std::span<Vertex> vertices, std::span<glm::mat4> modelMatrices);
+	void create_mesh(std::span<uint32_t> indices, std::span<Vertex> vertices);
 
 	VkSwapchainKHR _swapchain;
 	VkFormat _swapchainImageFormat;
@@ -168,6 +176,10 @@ public:
 	std::vector<VkImage> _swapchainImages;
 	std::vector<VkImageView> _swapchainImageViews;
 	VkExtent2D _swapchainExtent;
+
+	void upload_matrix_buffer();
+
+	Camera* get_camera();
 
 private:
 	void create_swapchain(uint32_t width, uint32_t height);
@@ -186,7 +198,7 @@ private:
 
 	void destroy_buffer(const AllocatedBuffer& buffer);
 
-	GPUMeshBuffers uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices, std::span<glm::mat4> modelMatrices);
+	GPUMeshBuffers uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices);
 
 	void immediate_submit(std::function<void(VkCommandBuffer cmd)>&& function);
 
@@ -201,4 +213,8 @@ private:
 	AllocatedImage loadTexture(const char* texturePath);
 
 	void init_sampler();
+
+	void update_matrix_buffer();
+
+
 };

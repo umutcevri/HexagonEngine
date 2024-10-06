@@ -22,6 +22,7 @@
 #include "Camera.h"
 
 #define ARRAY_MAX_TEXTURE_COUNT 256
+#define MAX_OBJECT_COUNT 1000000
 
 struct AllocatedBuffer {
     VkBuffer buffer;
@@ -40,13 +41,24 @@ struct Vertex {
     int padding[3];
 };
 
+struct Light {
+    glm::vec3 position;
+    glm::vec3 color;
+    glm::vec3 intensity;
+};
+
 // holds the resources needed for a mesh
 struct GPUMeshBuffers {
 
     AllocatedBuffer indexBuffer;
     AllocatedBuffer vertexBuffer;
-    AllocatedBuffer matrixBuffer;
     VkDeviceAddress vertexBufferAddress;
+    
+};
+
+struct GPUMatrixBuffer
+{
+    AllocatedBuffer matrixBuffer;
     VkDeviceAddress matrixBufferAddress;
 };
 
@@ -68,6 +80,7 @@ struct AllocatedImage {
     VmaAllocation allocation;
     VkExtent3D imageExtent;
     VkFormat imageFormat;
+    VkSampler sampler;
 };
 
 
