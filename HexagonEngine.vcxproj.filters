@@ -57,9 +57,6 @@
     <ClCompile Include="include\imgui\imgui_widgets.cpp">
       <Filter>Resource Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\Camera.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="include\SimplexNoise.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -90,6 +87,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\Game.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Player.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\World.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

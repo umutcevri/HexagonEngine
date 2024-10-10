@@ -9,6 +9,7 @@
 #include <functional>
 #include <deque>
 #include <iostream>
+#include <map>
 
 #include <vulkan/vulkan.h>
 #include <vulkan/vk_enum_string_helper.h>
@@ -19,10 +20,17 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/packing.hpp>
 
-#include "Camera.h"
-
 #define ARRAY_MAX_TEXTURE_COUNT 256
 #define MAX_OBJECT_COUNT 1000000
+
+struct Vec3Compare {
+    bool operator()(const glm::vec3& lhs, const glm::vec3& rhs) const {
+        // Compare x first, then y, then z
+        if (lhs.x != rhs.x) return lhs.x < rhs.x;
+        if (lhs.y != rhs.y) return lhs.y < rhs.y;
+        return lhs.z < rhs.z;
+    }
+};
 
 struct AllocatedBuffer {
     VkBuffer buffer;
@@ -66,12 +74,21 @@ struct GPUMatrixBuffer
 struct GPUDrawPushConstants {
     glm::mat4 worldMatrix;
     VkDeviceAddress vertexBuffer;
-    VkDeviceAddress matrixBuffer;
+    VkDeviceAddress blocksBuffer;
 };
 
 struct RenderObject
 {
     GPUMeshBuffers buffers;
+};
+
+struct Block
+{
+    glm::mat4 renderMatrix;
+    glm::vec3 color;
+    bool isSolidColor = false;
+    glm::vec2 chunkID;
+    int padding[2];
 };
 
 struct AllocatedImage {

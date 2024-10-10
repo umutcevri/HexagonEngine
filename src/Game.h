@@ -1,31 +1,34 @@
 #pragma once
 
 #include "Engine.h"
-#include "HexagonalBlock.h"
-#include "SimplexNoise.h"
-
-const int CHUNK_SIZE = 500;
-const int MAX_HEIGHT = 15;
-
-const float frequency = 0.01f;
+#include "Camera.h"
+#include "Player.h"
+#include "World.h"
 
 class HexagonGame
 {
 	HexagonEngine Engine;
+	Camera camera;
+	Player player = Player(glm::vec3(0, 10, 0));
+	World world;
 
 	HexagonalBlock block;
-	SimplexNoise noise;
 
 	bool bQuit = false;
 
+	
+
 public:
+	HexagonGame() {};
 
 	void Run()
 	{
 		Engine.init();
 		Engine.create_mesh(block.indices, block.vertices);
 
-		UpdateObjectMatrices();
+		world.UpdateChunks(player.GetPosition(), Engine.blocksVector);
+
+		Engine.SetFOV(camera.FoV);
 
 		while (!bQuit)
 		{
@@ -38,88 +41,48 @@ public:
 private:
 	void Update()
 	{
+		player.deltaTime = Engine.deltaTime;
+
+		player.updateFront(camera.Front);
+		player.updateRight(camera.Right);
+
+		keyboardInput();
+		mouseInput();
+
+		player.Move();
+
+		world.UpdateChunks(player.GetPosition(), Engine.blocksVector);
+
+		Engine.SetViewMatrix(camera.GetViewMatrix());
+
 		Engine.render();
+
+		camera.updatePosition(player.GetPosition());
+
 		bQuit = Engine.bQuit;
 	}
 
-	void UpdateObjectMatrices()
+	void keyboardInput()
 	{
-		Engine.modelMatrices.clear();
+		const Uint8* keystate = SDL_GetKeyboardState(NULL);
 
-		//glm::vec3 center = Engine->get_camera()->Position;
-		glm::vec3 center = glm::vec3(0);
+		// adjust accordingly
+		if (keystate[SDL_SCANCODE_W])
+			player.ProcessKeyboard(FORWARD);
+		if (keystate[SDL_SCANCODE_S])
+			player.ProcessKeyboard(BACKWARD);
+		if (keystate[SDL_SCANCODE_A])
+			player.ProcessKeyboard(LEFT);
+		if (keystate[SDL_SCANCODE_D])
+			player.ProcessKeyboard(RIGHT);
+		
+	}
 
-		glm::mat4 modelMatrix = block.inverseMatrix;
+	void mouseInput()
+	{
+		int xPos, yPos;
+		SDL_GetRelativeMouseState(&xPos, &yPos);
 
-		glm::vec3 position = glm::vec3(0, 0, 0);
-
-		float noiseValue = noise.noise(position.x * frequency, position.z * frequency);
-
-		int intHeight = static_cast<int>((noiseValue + 1.0f) * 0.5f * MAX_HEIGHT * 2);
-
-		float height = intHeight / 2.0f;
-		std::cout << height << std::endl;
-
-		position.y = height;
-
-		modelMatrix = glm::translate(modelMatrix, center + position);
-		modelMatrix = modelMatrix * block.defaultMatrix;
-
-		Engine.modelMatrices.push_back(modelMatrix);
-
-
-		for (int i = 1; i <= CHUNK_SIZE; i++)
-		{
-			std::vector<glm::vec3> corners;
-			float currentDegree = 0.f;
-			for (int a = 0; a < 6; a++)
-			{
-				glm::vec3 position = glm::vec3(i * (0.5f * glm::sqrt(3.f)) * glm::cos(glm::radians(currentDegree)), 0, i * (0.5f * glm::sqrt(3.f)) * glm::sin(glm::radians(currentDegree)));
-
-				corners.push_back(position);
-
-				float noiseValue = noise.noise(position.x * frequency, position.z * frequency);
-
-				int intHeight = static_cast<int>((noiseValue + 1.0f) * 0.5f * MAX_HEIGHT * 2);
-
-				float height = intHeight / 2.0f;
-				std::cout << height << std::endl;
-
-				position.y = height;
-
-				glm::mat4 modelMatrix = block.inverseMatrix;
-				modelMatrix = glm::translate(modelMatrix, center + position);
-				modelMatrix = modelMatrix * block.defaultMatrix;
-
-				Engine.modelMatrices.push_back(modelMatrix);
-
-				currentDegree += 60.f;
-			}
-
-			for (int a = 0; a < 6; a++)
-			{
-				glm::vec3 pos1 = corners[a];
-				glm::vec3 pos2 = corners[glm::mod(static_cast<float>(a + 1), 6.f)];
-
-				for (int b = 1; b < i; b++)
-				{
-					float alpha = static_cast<float>(b) / static_cast<float>(i);
-					glm::vec3 position = pos1 * (1 - alpha) + pos2 * alpha;
-
-					float noiseValue = noise.noise(position.x * frequency, position.z * frequency);
-
-					int intHeight = static_cast<int>((noiseValue + 1.0f) * 0.5f * MAX_HEIGHT * 2);
-
-					float height = intHeight / 2.0f;
-
-					position.y = height;
-
-					glm::mat4 modelMatrix = block.inverseMatrix;
-					modelMatrix = glm::translate(modelMatrix, center + position);
-					modelMatrix = modelMatrix * block.defaultMatrix;
-					Engine.modelMatrices.push_back(modelMatrix);
-				}
-			}
-		}
+		camera.ProcessMouseMovement(xPos, -yPos);
 	}
 };

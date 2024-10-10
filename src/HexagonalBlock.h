@@ -15,14 +15,16 @@ public:
 	HexagonalBlock()
 	{
 		//default rotations
-		defaultMatrix = glm::translate(defaultMatrix, glm::vec3(0, 0.5, 0));
+		defaultMatrix = glm::translate(defaultMatrix, glm::vec3(0, 1, 0));
 		defaultMatrix = glm::rotate(defaultMatrix, glm::radians(-90.f), glm::vec3(0, 1, 0));
 		defaultMatrix = glm::rotate(defaultMatrix, glm::radians(-90.f), glm::vec3(1, 0, 0));
+		defaultMatrix = glm::scale(defaultMatrix, glm::vec3(2, 2, 2));
 
 		//inverse to translate to world space
-		inverseMatrix = glm::rotate(defaultMatrix, glm::radians(90.f), glm::vec3(1, 0, 0));
+		inverseMatrix = glm::scale(defaultMatrix, glm::vec3(0.5f, 0.5f, 0.5f));
+		inverseMatrix = glm::rotate(inverseMatrix, glm::radians(90.f), glm::vec3(1, 0, 0));
 		inverseMatrix = glm::rotate(inverseMatrix, glm::radians(90.f), glm::vec3(0, 1, 0));
-		inverseMatrix = glm::translate(inverseMatrix, glm::vec3(0, -0.5, 0));
+		inverseMatrix = glm::translate(inverseMatrix, glm::vec3(0, -1, 0));
 
 
 		//TOP FACE
@@ -352,6 +354,11 @@ public:
 
 		*/
 
+	}
+
+	glm::mat4 translate(glm::vec3 target)
+	{
+		return glm::translate(inverseMatrix, target) * defaultMatrix;
 	}
 };
 

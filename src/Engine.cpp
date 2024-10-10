@@ -6,9 +6,6 @@
 #define VMA_IMPLEMENTATION
 #include "vk_mem_alloc.h"
 
-#include <SDL/SDL.h>
-#include <SDL/SDL_vulkan.h>
-
 #include "EngineInitializers.h"
 #include "EngineImages.h"
 #include "EnginePipelines.h"
@@ -75,8 +72,6 @@ void HexagonEngine::init()
         }
     });
 
-    camera = Camera(glm::vec3(0, 0, 0));
-
     SDL_StartTextInput();
 
     // everything went fine
@@ -118,17 +113,19 @@ void HexagonEngine::cleanup()
 void HexagonEngine::draw()
 {
     void* objectData;
-    vmaMapMemory(_allocator, get_current_frame().matricesBuffer.allocation, &objectData);
+    vmaMapMemory(_allocator, get_current_frame().blocksBuffer.allocation, &objectData);
 
-    glm::mat4* objectSSBO = (glm::mat4*)objectData;
+    Block* objectSSBO = (Block*)objectData;
 
-    for (int i = 0; i < modelMatrices.size(); i++)
+    int i = 0;
+    for (auto &blockPair : blocksVector)
     {
-        glm::mat4& matrix = modelMatrices[i];
-        objectSSBO[i] = matrix;
+        //lock& block = blocks[i];
+        objectSSBO[i] = blockPair;
+        i++;
     }
 
-    vmaUnmapMemory(_allocator, get_current_frame().matricesBuffer.allocation);
+    vmaUnmapMemory(_allocator, get_current_frame().blocksBuffer.allocation);
 
 
     VK_CHECK(vkWaitForFences(_device, 1, &get_current_frame()._renderFence, true, 1000000000));
@@ -284,22 +281,20 @@ void HexagonEngine::draw_mesh(VkCommandBuffer cmd)
 
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _meshPipelineLayout, 0, 1, &imageSet, 0, nullptr);
 
-    glm::mat4 view = camera.GetViewMatrix();
-        
-    glm::mat4 projection = glm::perspective(glm::radians(camera.FoV), (float)_drawExtent.width / (float)_drawExtent.height, 10000.f, 0.1f);
+    projection = glm::perspective(glm::radians(fov), (float)_drawExtent.width / (float)_drawExtent.height, 10000.f, 0.1f);
 
     projection[1][1] *= -1;
     
     GPUDrawPushConstants push_constants;
     push_constants.worldMatrix = projection * view;
     push_constants.vertexBuffer = block.buffers.vertexBufferAddress;
-    push_constants.matrixBuffer = get_current_frame().matricesBufferAddress;
+    push_constants.blocksBuffer = get_current_frame().blocksBufferAddress;
 
     vkCmdPushConstants(cmd, _meshPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &push_constants);
 
     vkCmdBindIndexBuffer(cmd, block.buffers.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
 
-    vkCmdDrawIndexed(cmd, 72, modelMatrices.size(), 0, 0, 0);
+    vkCmdDrawIndexed(cmd, 72, blocksVector.size(), 0, 0, 0);
 
     vkCmdEndRendering(cmd);
 }
@@ -311,9 +306,6 @@ void HexagonEngine::render()
     float currentFrame = (float)SDL_GetTicks() / 1000.0f;
     deltaTime = currentFrame - lastFrame;
     lastFrame = currentFrame;
-
-    keyboardInput();
-    mouseInput();
 
     // Handle events on queue
     while (SDL_PollEvent(&e) != 0) {
@@ -646,16 +638,16 @@ void HexagonEngine::init_descriptors()
 
     for (int i = 0; i < FRAME_OVERLAP; i++) {
         
-        const size_t matricesBufferSize = MAX_OBJECT_COUNT * sizeof(glm::mat4);
+        const size_t blocksBufferSize = MAX_OBJECT_COUNT * sizeof(Block);
 
-        _frames[i].matricesBuffer = create_buffer(matricesBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+        _frames[i].blocksBuffer = create_buffer(blocksBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
             VMA_MEMORY_USAGE_CPU_TO_GPU);
 
-        VkBufferDeviceAddressInfo deviceAdressInfoM{ .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,.buffer = _frames[i].matricesBuffer.buffer };
-        _frames[i].matricesBufferAddress = vkGetBufferDeviceAddress(_device, &deviceAdressInfoM);
+        VkBufferDeviceAddressInfo deviceAdressInfoM{ .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,.buffer = _frames[i].blocksBuffer.buffer };
+        _frames[i].blocksBufferAddress = vkGetBufferDeviceAddress(_device, &deviceAdressInfoM);
 
         _mainDeletionQueue.push_function([&, i]() {
-            destroy_buffer(_frames[i].matricesBuffer);
+            destroy_buffer(_frames[i].blocksBuffer);
             });
     }
 
@@ -1097,35 +1089,6 @@ void HexagonEngine::destroy_image(const AllocatedImage& img)
     vmaDestroyImage(_allocator, img.image, img.allocation);
 }
 
-void HexagonEngine::mouseInput()
-{
-    int xPos, yPos;
-    SDL_GetRelativeMouseState(&xPos, &yPos);
-
-    camera.ProcessMouseMovement(xPos, -yPos);
-}
-
-void HexagonEngine::keyboardInput()
-{
-    const Uint8* keystate = SDL_GetKeyboardState(NULL);
-
-    const float cameraSpeed = 10.0f * deltaTime;
-
-    // adjust accordingly
-    if (keystate[SDL_SCANCODE_W])
-        camera.ProcessKeyboard(FORWARD, deltaTime);
-    if (keystate[SDL_SCANCODE_S])
-        camera.ProcessKeyboard(BACKWARD, deltaTime);
-    if (keystate[SDL_SCANCODE_A])
-        camera.ProcessKeyboard(LEFT, deltaTime);
-    if (keystate[SDL_SCANCODE_D])
-        camera.ProcessKeyboard(RIGHT, deltaTime);
-    if (keystate[SDL_SCANCODE_SPACE])
-        camera.ProcessKeyboard(UP, deltaTime);
-    if (keystate[SDL_SCANCODE_LSHIFT])
-        camera.ProcessKeyboard(DOWN, deltaTime);
-}
-
 AllocatedImage HexagonEngine::loadTexture(const char* texturePath)
 {
     AllocatedImage newImage {};
@@ -1176,65 +1139,12 @@ void HexagonEngine::init_sampler()
         });
 }
 
-void HexagonEngine::update_matrix_buffer()
+void HexagonEngine::SetViewMatrix(glm::mat4 matrix)
 {
-    if (matrixBuffer.matrixBuffer.buffer == VK_NULL_HANDLE)
-        return;
-
-    const size_t currentBufferSize = modelMatrices.size() * sizeof(glm::mat4);
-
-    AllocatedBuffer staging = create_buffer(currentBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY);
-
-    void* data = staging.allocation->GetMappedData();
-
-    memcpy(data, modelMatrices.data(), currentBufferSize);
-
-    immediate_submit([&](VkCommandBuffer cmd) {
-        VkBufferCopy matrixCopy{ 0 };
-        matrixCopy.dstOffset = 0;
-        matrixCopy.srcOffset = 0;
-        matrixCopy.size = currentBufferSize;
-
-        vkCmdCopyBuffer(cmd, staging.buffer, matrixBuffer.matrixBuffer.buffer, 1, &matrixCopy);
-        });
-
-    destroy_buffer(staging);
+    view = matrix;
 }
 
-void HexagonEngine::upload_matrix_buffer()
+void HexagonEngine::SetFOV(float _fov)
 {
-    const size_t matrixBufferSize = MAX_OBJECT_COUNT * sizeof(glm::mat4);
-    const size_t currentBufferSize = modelMatrices.size() * sizeof(glm::mat4);
-
-    matrixBuffer.matrixBuffer = create_buffer(matrixBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-        VMA_MEMORY_USAGE_GPU_ONLY);
-
-    VkBufferDeviceAddressInfo deviceAdressInfoM{ .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,.buffer = matrixBuffer.matrixBuffer.buffer };
-    matrixBuffer.matrixBufferAddress = vkGetBufferDeviceAddress(_device, &deviceAdressInfoM);
-
-    AllocatedBuffer staging = create_buffer(currentBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY);
-
-    void* data = staging.allocation->GetMappedData();
-
-    memcpy(data, modelMatrices.data(), currentBufferSize);
-
-    immediate_submit([&](VkCommandBuffer cmd) {
-        VkBufferCopy matrixCopy{ 0 };
-        matrixCopy.dstOffset = 0;
-        matrixCopy.srcOffset = 0;
-        matrixCopy.size = currentBufferSize;
-
-        vkCmdCopyBuffer(cmd, staging.buffer, matrixBuffer.matrixBuffer.buffer, 1, &matrixCopy);
-        });
-
-    _mainDeletionQueue.push_function([&]() {
-        destroy_buffer(matrixBuffer.matrixBuffer);
-        });
-
-    destroy_buffer(staging);
-}
-
-Camera* HexagonEngine::get_camera()
-{
-    return &camera;
+    fov = _fov;
 }

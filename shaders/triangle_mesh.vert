@@ -13,14 +13,21 @@ struct Vertex {
 	float uv_y;
 	vec4 color;
 	int textureID;
-}; 
+};
+
+struct Block
+{
+    mat4 renderMatrix;
+    vec3 color;
+    bool isSolidColor;
+};
 
 layout(buffer_reference, std430) readonly buffer VertexBuffer{ 
 	Vertex vertices[];
 };
 
-layout(buffer_reference, std430) readonly buffer MatrixBuffer {
-    mat4 modelMatrices[];
+layout(buffer_reference, std430) readonly buffer BlocksBuffer {
+    Block blocks[];
 };
 
 //push constants block
@@ -28,14 +35,15 @@ layout( push_constant ) uniform constants
 {	
 	mat4 render_matrix;
 	VertexBuffer vertexBuffer;
-	MatrixBuffer matrixBuffer;
+	BlocksBuffer blocksBuffer;
 } PushConstants;
 
 void main() 
 {	
 	//load vertex data from device adress
 	Vertex v = PushConstants.vertexBuffer.vertices[gl_VertexIndex];
-	mat4 modelMatrix = PushConstants.matrixBuffer.modelMatrices[gl_InstanceIndex];
+	Block b = PushConstants.blocksBuffer.blocks[gl_InstanceIndex];
+	mat4 modelMatrix = b.renderMatrix;
 
 	//output data
 	gl_Position = PushConstants.render_matrix * modelMatrix * vec4(v.position, 1.0f);

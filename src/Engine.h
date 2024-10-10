@@ -3,6 +3,9 @@
 #include "EngineTypes.h"
 #include "EngineDescriptors.h"
 
+#include <SDL/SDL.h>
+#include <SDL/SDL_vulkan.h>
+
 struct ComputePushConstants {
 	glm::vec4 data1;
 	glm::vec4 data2;
@@ -47,8 +50,8 @@ struct FrameData {
 	DeletionQueue _deletionQueue;
 	DescriptorAllocatorGrowable _frameDescriptors;
 
-	AllocatedBuffer matricesBuffer;
-	VkDeviceAddress matricesBufferAddress;
+	AllocatedBuffer blocksBuffer;
+	VkDeviceAddress blocksBufferAddress;
 };
 
 struct GPUSceneData {
@@ -66,14 +69,17 @@ class HexagonEngine {
 public:
 	bool bQuit = false;
 
-	std::vector<glm::mat4> modelMatrices;
+	std::map<glm::vec3, Block, Vec3Compare> blocks;
+	std::vector<Block> blocksVector;
 	std::vector<Light> lights;
 
 	RenderObject block;
 
 	GPUMatrixBuffer matrixBuffer;
 
-	Camera camera;
+	glm::mat4 view;
+	glm::mat4 projection;
+	float fov;
 
 	float deltaTime;
 	float lastFrame = 0;
@@ -179,7 +185,9 @@ public:
 
 	void upload_matrix_buffer();
 
-	Camera* get_camera();
+	void SetViewMatrix(glm::mat4 matrix);
+
+	void SetFOV(float _fov);
 
 private:
 	void create_swapchain(uint32_t width, uint32_t height);
@@ -205,10 +213,6 @@ private:
 	void init_mesh_pipeline();
 
 	void resize_swapchain();
-
-	void mouseInput();
-
-	void keyboardInput();
 
 	AllocatedImage loadTexture(const char* texturePath);
 

@@ -1,25 +1,15 @@
 #pragma once
-#ifndef CAMERA_H
-#define CAMERA_H
 
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-
-enum Camera_Movement {
-    FORWARD,
-    BACKWARD,
-    LEFT,
-    RIGHT,
-    UP,
-    DOWN
-};
+#include "Player.h"
 
 //default values
-const float YAW = -90.0f;
+const float YAW = 90.0f;
 const float PITCH = 0.0f;
 const float SPEED = 50.f;
 const float SENSITIVITY = 0.1f;
 const float FOV = 45.0f;
+
+const glm::vec3 offset = glm::vec3(0, 1.8f, 0);
 
 class Camera
 {
@@ -39,15 +29,75 @@ public:
     float FoV;
 
    
-    Camera(glm::vec3 position = glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f), float yaw = YAW, float pitch = PITCH);
-    
-    glm::mat4 GetViewMatrix();
-    
-    void ProcessKeyboard(Camera_Movement direction, float deltaTime);
+    Camera(glm::vec3 position = glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f), float yaw = YAW, float pitch = PITCH)
+    {
+        MovementSpeed = SPEED;
+        FoV = FOV;
+        MouseSensitivity = SENSITIVITY;
 
-    void ProcessMouseMovement(float xoffset, float yoffset, bool constrainPitch = true);
+        Position = position;
+        WorldUp = up;
+        Yaw = yaw;
+        Pitch = pitch;
+        updateCameraVectors();
+    }
+    
+    glm::mat4 GetViewMatrix()
+    {
+        return glm::lookAt(Position, Position + Front, Up);
+    }
+
+    void ProcessKeyboard(Player_Movement direction, float deltaTime)
+    {
+        float velocity = MovementSpeed * deltaTime;
+        if (direction == FORWARD)
+            Position += Front * velocity;
+        if (direction == BACKWARD)
+            Position -= Front * velocity;
+        if (direction == LEFT)
+            Position -= Right * velocity;
+        if (direction == RIGHT)
+            Position += Right * velocity;
+        if (direction == UP)
+            Position += Up * velocity;
+        if (direction == DOWN)
+            Position -= Up * velocity;
+    }
+
+    void ProcessMouseMovement(float xoffset, float yoffset, bool constrainPitch = true)
+    {
+        xoffset *= MouseSensitivity;
+        yoffset *= MouseSensitivity;
+
+        Yaw += xoffset;
+        Pitch += yoffset;
+
+        if (constrainPitch)
+        {
+            if (Pitch > 89.0f)
+                Pitch = 89.0f;
+            if (Pitch < -89.0f)
+                Pitch = -89.0f;
+        }
+
+        updateCameraVectors();
+    }
+
+    void updatePosition(glm::vec3 position)
+    {
+        Position = position + offset;
+    }
 
 private:
-    void updateCameraVectors();
+    void updateCameraVectors()
+    {
+        glm::vec3 front;
+        front.x = cos(glm::radians(Yaw)) * cos(glm::radians(Pitch));
+        front.y = sin(glm::radians(Pitch));
+        front.z = sin(glm::radians(Yaw)) * cos(glm::radians(Pitch));
+        Front = glm::normalize(front);
+
+        Right = glm::normalize(glm::cross(Front, WorldUp));
+        Up = glm::normalize(glm::cross(Right, Front));
+    }
 };
-#endif
