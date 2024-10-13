@@ -4,29 +4,55 @@
 #include "Camera.h"
 #include "Player.h"
 #include "World.h"
+#include "Circle.h"
+
+std::array<Vertex, 38> HexagonalBlock::vertices;
+std::array<uint32_t, 72> HexagonalBlock::indices;
+glm::mat4 HexagonalBlock::defaultMatrix = glm::mat4(1.f);
+glm::mat4 HexagonalBlock::inverseMatrix = glm::mat4(1.f);
+
+std::vector<Vertex> Circle::vertices;
+std::vector<uint32_t> Circle::indices;
 
 class HexagonGame
 {
+	float deltaTime;
+	float lastFrame = 0;
+
 	HexagonEngine Engine;
 	Camera camera;
 	Player player = Player(glm::vec3(0, 10, 0));
 	World world;
 
-	HexagonalBlock block;
-
 	bool bQuit = false;
-
-	
 
 public:
 	HexagonGame() {};
 
 	void Run()
 	{
-		Engine.init();
-		Engine.create_mesh(block.indices, block.vertices);
+		HexagonalBlock::Initialize();
+		Circle::Initialize(1, 40);
 
-		world.UpdateChunks(player.GetPosition(), Engine.blocksVector);
+		Engine.init();
+
+		Engine.create_mesh(HexagonalBlock::indices, HexagonalBlock::vertices);
+		Engine.create_mesh(Circle::indices, Circle::vertices);
+
+		Engine.renderObjectBufferDelete();
+
+		Object o;
+		glm::mat4 modelMatrix(1.f);
+		modelMatrix = glm::translate(modelMatrix, player.GetPosition());
+		//modelMatrix = glm::scale(modelMatrix, glm::vec3(0, 0, 0));
+
+		o.isSolidColor = true;
+		o.color = glm::vec3(1, 0, 1);
+		o.renderMatrix = modelMatrix;
+
+		Engine.renderObjects[1].instances.push_back(o);
+
+		world.UpdateChunks(player.GetPosition(), Engine.renderObjects[0].instances);
 
 		Engine.SetFOV(camera.FoV);
 
@@ -41,7 +67,11 @@ public:
 private:
 	void Update()
 	{
-		player.deltaTime = Engine.deltaTime;
+		float currentFrame = (float)SDL_GetTicks64() / 1000.0f;
+		deltaTime = currentFrame - lastFrame;	
+		lastFrame = currentFrame;
+
+		player.deltaTime = deltaTime;
 
 		player.updateFront(camera.Front);
 		player.updateRight(camera.Right);
@@ -49,15 +79,22 @@ private:
 		keyboardInput();
 		mouseInput();
 
-		player.Move();
+		player.Move(Engine.renderObjects[0].instances);
 
-		world.UpdateChunks(player.GetPosition(), Engine.blocksVector);
+		world.UpdateChunks(player.GetPosition(), Engine.renderObjects[0].instances);
+
+		std::cout << Engine.renderObjects[0].instances.size() << std::endl;
+
+		glm::mat4 modelMatrix(1.f);
+		modelMatrix = glm::translate(modelMatrix, player.GetPosition() + glm::vec3(0, 0.01f, 0));
+		modelMatrix = glm::scale(modelMatrix, glm::vec3(0.5f));
+		//Engine.renderObjects[1].instances[0].renderMatrix = modelMatrix;
+
+		camera.updatePosition(player.GetPosition());
 
 		Engine.SetViewMatrix(camera.GetViewMatrix());
 
 		Engine.render();
-
-		camera.updatePosition(player.GetPosition());
 
 		bQuit = Engine.bQuit;
 	}
@@ -85,4 +122,6 @@ private:
 
 		camera.ProcessMouseMovement(xPos, -yPos);
 	}
+
+
 };

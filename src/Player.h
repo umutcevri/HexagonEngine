@@ -63,9 +63,9 @@ public:
             AttemptedPosition += Right * velocity;
     }
 
-    void Move()
+    void Move(std::vector<Object> &blocks)
     {
-        CheckForCollisions();
+        CheckForCollisions(blocks);
     }
 
     glm::vec3 GetPosition()
@@ -85,21 +85,40 @@ public:
         //Right = glm::normalize(glm::vec3(right.x, 0, right.z));
     }
 
-    void CheckForCollisions()
+    void CheckForCollisions(std::vector<Object> &blocks)
     {
         float a = AttemptedPosition.x / (0.5f * glm::sqrt(3.f));
         float b = AttemptedPosition.z / 1.5f;
 
-        int x = static_cast<int>(a);
-        int y = static_cast<int>(b);
+        int x = glm::round(a);
+        int y = glm::round(b);
+        
+        
+        glm::vec3 targetBlock(x * 0.5f * glm::sqrt(3.f), 0, y * 1.5f);
+        auto it = std::find_if(blocks.begin(), blocks.end(), [targetBlock](const Object& element) {
+            return element.blockCoords == targetBlock;
+            });
 
-        if (x % 2 != 0)
-        {
-            if (x > 0)
-                x += 1;
-            if (x < 0)
-                x -= 1;
+        if (it != blocks.end()) {
+            //std::cout << "found" << std::endl;
+            it->isSolidColor = true;
+            it->color = glm::vec3(1, 0, 1);
         }
+        
+        
+        
+
+        /*
+        for (auto& block : blocks)
+        {
+            block.isSolidColor = true;
+            block.color = glm::vec3(1, 0, 1);
+        }
+        */
+        
+
+        
+        
 
         /*
         std::cout << x << " " << y << std::endl;
@@ -112,6 +131,7 @@ public:
         */
 
         Position = AttemptedPosition;
+        //std::cout << Position.x << " " << Position.y << " " << Position.z << std::endl;
     }
 
     bool CheckForHexagonCollisions(int x, int y)

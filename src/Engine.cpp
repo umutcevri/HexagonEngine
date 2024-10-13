@@ -46,6 +46,8 @@ void HexagonEngine::init()
         _windowExtent.height,
         window_flags);
 
+    //SDL_SetWindowFullscreen(_window, SDL_WINDOW_FULLSCREEN_DESKTOP);
+
     init_vulkan();
 
     init_swapchain();
@@ -113,19 +115,26 @@ void HexagonEngine::cleanup()
 void HexagonEngine::draw()
 {
     void* objectData;
-    vmaMapMemory(_allocator, get_current_frame().blocksBuffer.allocation, &objectData);
+    vmaMapMemory(_allocator, get_current_frame().objectBuffer.allocation, &objectData);
 
-    Block* objectSSBO = (Block*)objectData;
+    ObjectBufferData* objectSSBO = (ObjectBufferData*)objectData;
 
     int i = 0;
-    for (auto &blockPair : blocksVector)
+    for (auto &renderObject : renderObjects)
     {
-        //lock& block = blocks[i];
-        objectSSBO[i] = blockPair;
-        i++;
+        for (auto& objectInstance : renderObject.instances)
+        {
+            ObjectBufferData data;
+            data.renderMatrix = objectInstance.renderMatrix;
+            data.color = objectInstance.color;
+            data.isSolidColor = objectInstance.isSolidColor;
+
+            objectSSBO[i] = data;
+            i++;
+        }       
     }
 
-    vmaUnmapMemory(_allocator, get_current_frame().blocksBuffer.allocation);
+    vmaUnmapMemory(_allocator, get_current_frame().objectBuffer.allocation);
 
 
     VK_CHECK(vkWaitForFences(_device, 1, &get_current_frame()._renderFence, true, 1000000000));
@@ -274,9 +283,6 @@ void HexagonEngine::draw_mesh(VkCommandBuffer cmd)
 
     DescriptorWriter writer;
 
-    //writer.write_image(0, _exampleTexture.imageView, _defaultSamplerLinear, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-    //writer.write_image(1, _exampleTexture2.imageView, _defaultSamplerLinear, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-
     writer.write_image(0, _images, _defaultSamplerLinear, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, imageSet, _device);
 
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _meshPipelineLayout, 0, 1, &imageSet, 0, nullptr);
@@ -284,28 +290,31 @@ void HexagonEngine::draw_mesh(VkCommandBuffer cmd)
     projection = glm::perspective(glm::radians(fov), (float)_drawExtent.width / (float)_drawExtent.height, 10000.f, 0.1f);
 
     projection[1][1] *= -1;
+
+    int i = 0;
+    for (auto& renderObject : renderObjects)
+    {
+        GPUDrawPushConstants push_constants;
+        push_constants.worldMatrix = projection * view;
+        push_constants.vertexBuffer = renderObject.buffers.vertexBufferAddress;
+        push_constants.objectBuffer = get_current_frame().objectBufferAddress;
+
+        vkCmdPushConstants(cmd, _meshPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &push_constants);
+
+        vkCmdBindIndexBuffer(cmd, renderObject.buffers.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+
+        vkCmdDrawIndexed(cmd, renderObject.indexCount, renderObject.instances.size(), 0, 0, i);
+        i += renderObject.instances.size();
+    }
     
-    GPUDrawPushConstants push_constants;
-    push_constants.worldMatrix = projection * view;
-    push_constants.vertexBuffer = block.buffers.vertexBufferAddress;
-    push_constants.blocksBuffer = get_current_frame().blocksBufferAddress;
-
-    vkCmdPushConstants(cmd, _meshPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &push_constants);
-
-    vkCmdBindIndexBuffer(cmd, block.buffers.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
-
-    vkCmdDrawIndexed(cmd, 72, blocksVector.size(), 0, 0, 0);
-
     vkCmdEndRendering(cmd);
 }
 
 void HexagonEngine::render()
 {
-    //std::cout << (1.0f / deltaTime) << std::endl;
+   
 
-    float currentFrame = (float)SDL_GetTicks() / 1000.0f;
-    deltaTime = currentFrame - lastFrame;
-    lastFrame = currentFrame;
+    
 
     // Handle events on queue
     while (SDL_PollEvent(&e) != 0) {
@@ -377,9 +386,8 @@ void HexagonEngine::render()
     //make imgui calculate internal draw structures
     ImGui::Render();
 
-    //update_matrix_buffer();
-    //our draw function
     draw();
+   
 }
 
 void HexagonEngine::init_vulkan()
@@ -566,7 +574,7 @@ void HexagonEngine::create_swapchain(uint32_t width, uint32_t height)
         //.use_default_format_selection()
         .set_desired_format(VkSurfaceFormatKHR{ .format = _swapchainImageFormat, .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR })
         //use vsync present mode
-        .set_desired_present_mode(VkPresentModeKHR(2))
+        .set_desired_present_mode(VkPresentModeKHR(0))
         .set_desired_extent(width, height)
         .add_image_usage_flags(VK_IMAGE_USAGE_TRANSFER_DST_BIT)
         .build()
@@ -606,17 +614,10 @@ void HexagonEngine::init_descriptors()
         _singleImageDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_FRAGMENT_BIT);
     }
 
-    {
-        DescriptorLayoutBuilder builder;
-        builder.add_binding(0, 1, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-        _gpuSceneDataDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
-    }
-
     //make sure both the descriptor allocator and the new layout get cleaned up properly
     _mainDeletionQueue.push_function([&]() {     
         vkDestroyDescriptorSetLayout(_device, _drawImageDescriptorLayout, nullptr);
         vkDestroyDescriptorSetLayout(_device, _singleImageDescriptorLayout, nullptr);
-        vkDestroyDescriptorSetLayout(_device, _gpuSceneDataDescriptorLayout, nullptr);
         });
 
     for (int i = 0; i < FRAME_OVERLAP; i++) {
@@ -638,16 +639,16 @@ void HexagonEngine::init_descriptors()
 
     for (int i = 0; i < FRAME_OVERLAP; i++) {
         
-        const size_t blocksBufferSize = MAX_OBJECT_COUNT * sizeof(Block);
+        const size_t objectBufferSize = MAX_OBJECT_COUNT * sizeof(ObjectBufferData);
 
-        _frames[i].blocksBuffer = create_buffer(blocksBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+        _frames[i].objectBuffer = create_buffer(objectBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
             VMA_MEMORY_USAGE_CPU_TO_GPU);
 
-        VkBufferDeviceAddressInfo deviceAdressInfoM{ .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,.buffer = _frames[i].blocksBuffer.buffer };
-        _frames[i].blocksBufferAddress = vkGetBufferDeviceAddress(_device, &deviceAdressInfoM);
+        VkBufferDeviceAddressInfo deviceAdressInfoM{ .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,.buffer = _frames[i].objectBuffer.buffer };
+        _frames[i].objectBufferAddress = vkGetBufferDeviceAddress(_device, &deviceAdressInfoM);
 
         _mainDeletionQueue.push_function([&, i]() {
-            destroy_buffer(_frames[i].blocksBuffer);
+            destroy_buffer(_frames[i].objectBuffer);
             });
     }
 
@@ -917,16 +918,16 @@ void HexagonEngine::immediate_submit(std::function<void(VkCommandBuffer cmd)>&& 
 
 void HexagonEngine::init_mesh_pipeline()
 {
-    VkShaderModule triangleFragShader;
-    if (!VKUtil::load_shader_module("shaders/tex_image.frag.spv", _device, &triangleFragShader)) {
+    VkShaderModule meshFragShader;
+    if (!VKUtil::load_shader_module("shaders/hexagon_block.frag.spv", _device, &meshFragShader)) {
         std::cout << "Error when building the fragment shader \n";
     }
     else {
         std::cout << "Triangle fragment shader succesfully loaded \n";
     }
 
-    VkShaderModule triangleVertexShader;
-    if (!VKUtil::load_shader_module("shaders/triangle_mesh.vert.spv", _device, &triangleVertexShader)) {
+    VkShaderModule meshVertexShader;
+    if (!VKUtil::load_shader_module("shaders/hexagon_block.vert.spv", _device, &meshVertexShader)) {
         std::cout << "Error when building the vertex shader \n";
     }
     else {
@@ -950,30 +951,30 @@ void HexagonEngine::init_mesh_pipeline()
     //use the triangle layout we created
     pipelineBuilder._pipelineLayout = _meshPipelineLayout;
     //connecting the vertex and pixel shaders to the pipeline
-    pipelineBuilder.set_shaders(triangleVertexShader, triangleFragShader);
+    pipelineBuilder.set_shaders(meshVertexShader, meshFragShader);
     //it will draw triangles
     pipelineBuilder.set_input_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
     //filled triangles
     pipelineBuilder.set_polygon_mode(VK_POLYGON_MODE_FILL);
     //no backface culling
-    pipelineBuilder.set_cull_mode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
+    pipelineBuilder.set_cull_mode(VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_CLOCKWISE);
     //no multisampling
     pipelineBuilder.set_multisampling_none();
     //no blending
     pipelineBuilder.disable_blending();
-    //no depth testing
+   
     pipelineBuilder.enable_depthtest(true, VK_COMPARE_OP_GREATER_OR_EQUAL);
 
     //connect the image format we will draw into, from draw image
     pipelineBuilder.set_color_attachment_format(_drawImage.imageFormat);
     pipelineBuilder.set_depth_format(_depthImage.imageFormat);
 
-    //finally build the pipeline
+    //build the pipeline
     _meshPipeline = pipelineBuilder.build_pipeline(_device);
 
     //clean structures
-    vkDestroyShaderModule(_device, triangleFragShader, nullptr);
-    vkDestroyShaderModule(_device, triangleVertexShader, nullptr);
+    vkDestroyShaderModule(_device, meshFragShader, nullptr);
+    vkDestroyShaderModule(_device, meshVertexShader, nullptr);
 
     _mainDeletionQueue.push_function([&]() {
         vkDestroyPipelineLayout(_device, _meshPipelineLayout, nullptr);
@@ -983,12 +984,17 @@ void HexagonEngine::init_mesh_pipeline()
 
 void HexagonEngine::create_mesh(std::span<uint32_t> indices, std::span<Vertex> vertices) {
 
-  
-    block.buffers = uploadMesh(indices, vertices);
+    renderObjects.emplace_back(RenderObject(uploadMesh(indices, vertices), indices.size()));
+}
 
+void HexagonEngine::renderObjectBufferDelete()
+{
     _mainDeletionQueue.push_function([&]() {
-        destroy_buffer(block.buffers.indexBuffer);
-        destroy_buffer(block.buffers.vertexBuffer);
+        for (auto &renderObject : renderObjects)
+        {
+            destroy_buffer(renderObject.buffers.indexBuffer);
+            destroy_buffer(renderObject.buffers.vertexBuffer);
+        }  
         });
 }
 

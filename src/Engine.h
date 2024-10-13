@@ -50,32 +50,19 @@ struct FrameData {
 	DeletionQueue _deletionQueue;
 	DescriptorAllocatorGrowable _frameDescriptors;
 
-	AllocatedBuffer blocksBuffer;
-	VkDeviceAddress blocksBufferAddress;
+	AllocatedBuffer objectBuffer;
+	VkDeviceAddress objectBufferAddress;
 };
 
-struct GPUSceneData {
-	glm::mat4 view;
-	glm::mat4 proj;
-	glm::mat4 viewproj;
-	glm::vec4 ambientColor;
-	glm::vec4 sunlightDirection; // w for sun power
-	glm::vec4 sunlightColor;
-};
-
-constexpr unsigned int FRAME_OVERLAP = 2;
+constexpr unsigned int FRAME_OVERLAP = 1;
 
 class HexagonEngine {
 public:
 	bool bQuit = false;
 
-	std::map<glm::vec3, Block, Vec3Compare> blocks;
-	std::vector<Block> blocksVector;
 	std::vector<Light> lights;
 
-	RenderObject block;
-
-	GPUMatrixBuffer matrixBuffer;
+	std::vector<RenderObject> renderObjects;
 
 	glm::mat4 view;
 	glm::mat4 projection;
@@ -90,9 +77,6 @@ public:
 
 	AllocatedImage _depthImage;
 
-	AllocatedImage _exampleTexture2;
-	AllocatedImage _exampleTexture;
-
 	VkSampler _defaultSamplerLinear;
 	VkSampler _defaultSamplerNearest;
 
@@ -100,17 +84,11 @@ public:
 	AllocatedImage create_image(void* data, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
 	void destroy_image(const AllocatedImage& img);
 
-	GPUSceneData sceneData;
-
-	VkDescriptorSetLayout _gpuSceneDataDescriptorLayout;
-
 	float renderScale = 1.f;
 	bool resize_requested;
 
 	VkPipelineLayout _meshPipelineLayout;
 	VkPipeline _meshPipeline;
-
-	GPUMeshBuffers rectangle;
 
 	VkFence _immFence;
 	VkCommandBuffer _immCommandBuffer;
@@ -176,14 +154,14 @@ public:
 
 	void create_mesh(std::span<uint32_t> indices, std::span<Vertex> vertices);
 
+	void renderObjectBufferDelete();
+
 	VkSwapchainKHR _swapchain;
 	VkFormat _swapchainImageFormat;
 
 	std::vector<VkImage> _swapchainImages;
 	std::vector<VkImageView> _swapchainImageViews;
 	VkExtent2D _swapchainExtent;
-
-	void upload_matrix_buffer();
 
 	void SetViewMatrix(glm::mat4 matrix);
 
@@ -217,8 +195,6 @@ private:
 	AllocatedImage loadTexture(const char* texturePath);
 
 	void init_sampler();
-
-	void update_matrix_buffer();
 
 
 };

@@ -7,7 +7,7 @@ const float YAW = 90.0f;
 const float PITCH = 0.0f;
 const float SPEED = 50.f;
 const float SENSITIVITY = 0.1f;
-const float FOV = 45.0f;
+const float FOV = 60.0f;
 
 const glm::vec3 offset = glm::vec3(0, 1.8f, 0);
 

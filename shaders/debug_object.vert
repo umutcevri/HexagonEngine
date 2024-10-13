@@ -2,8 +2,6 @@
 #extension GL_EXT_buffer_reference : require
 
 layout (location = 0) out vec3 outColor;
-layout (location = 1) out vec2 outUV;
-layout (location = 2) flat out int outTextureID;
 
 struct Vertex {
 
@@ -15,19 +13,18 @@ struct Vertex {
 	int textureID;
 };
 
-struct Block
+struct ObjectBufferData
 {
     mat4 renderMatrix;
     vec3 color;
-    bool isSolidColor;
 };
 
 layout(buffer_reference, std430) readonly buffer VertexBuffer{ 
 	Vertex vertices[];
 };
 
-layout(buffer_reference, std430) readonly buffer BlocksBuffer {
-    Block blocks[];
+layout(buffer_reference, std430) readonly buffer ObjectsBuffer {
+    ObjectBufferData objects[];
 };
 
 //push constants block
@@ -35,20 +32,17 @@ layout( push_constant ) uniform constants
 {	
 	mat4 render_matrix;
 	VertexBuffer vertexBuffer;
-	BlocksBuffer blocksBuffer;
+	ObjectsBuffer objectsBuffer;
 } PushConstants;
 
 void main() 
 {	
 	//load vertex data from device adress
 	Vertex v = PushConstants.vertexBuffer.vertices[gl_VertexIndex];
-	Block b = PushConstants.blocksBuffer.blocks[gl_InstanceIndex];
-	mat4 modelMatrix = b.renderMatrix;
+	ObjectsBufferData d = PushConstants.objectsBuffer.objects[gl_InstanceIndex];
+	mat4 modelMatrix = d.renderMatrix;
 
 	//output data
 	gl_Position = PushConstants.render_matrix * modelMatrix * vec4(v.position, 1.0f);
-	outColor = v.color.xyz;
-	outUV.x = v.uv_x;
-	outUV.y = v.uv_y;
-	outTextureID = v.textureID;
+	outColor = d.color;
 }

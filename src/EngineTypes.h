@@ -23,15 +23,6 @@
 #define ARRAY_MAX_TEXTURE_COUNT 256
 #define MAX_OBJECT_COUNT 1000000
 
-struct Vec3Compare {
-    bool operator()(const glm::vec3& lhs, const glm::vec3& rhs) const {
-        // Compare x first, then y, then z
-        if (lhs.x != rhs.x) return lhs.x < rhs.x;
-        if (lhs.y != rhs.y) return lhs.y < rhs.y;
-        return lhs.z < rhs.z;
-    }
-};
-
 struct AllocatedBuffer {
     VkBuffer buffer;
     VmaAllocation allocation;
@@ -49,13 +40,21 @@ struct Vertex {
     int padding[3];
 };
 
+struct Object
+{
+    glm::mat4 renderMatrix;
+    glm::vec3 color;
+    bool isSolidColor = false;
+    glm::vec2 chunkID;
+    glm::vec3 blockCoords;
+};
+
 struct Light {
     glm::vec3 position;
     glm::vec3 color;
     glm::vec3 intensity;
 };
 
-// holds the resources needed for a mesh
 struct GPUMeshBuffers {
 
     AllocatedBuffer indexBuffer;
@@ -64,31 +63,26 @@ struct GPUMeshBuffers {
     
 };
 
-struct GPUMatrixBuffer
-{
-    AllocatedBuffer matrixBuffer;
-    VkDeviceAddress matrixBufferAddress;
-};
-
-// push constants for our mesh object draws
 struct GPUDrawPushConstants {
     glm::mat4 worldMatrix;
     VkDeviceAddress vertexBuffer;
-    VkDeviceAddress blocksBuffer;
+    VkDeviceAddress objectBuffer;
 };
 
 struct RenderObject
 {
     GPUMeshBuffers buffers;
+    std::vector<Object> instances;
+    int indexCount;
+
+    RenderObject(GPUMeshBuffers b, int indexcount) : buffers(b), indexCount(indexcount){}
 };
 
-struct Block
+struct ObjectBufferData
 {
     glm::mat4 renderMatrix;
     glm::vec3 color;
-    bool isSolidColor = false;
-    glm::vec2 chunkID;
-    int padding[2];
+    int isSolidColor;
 };
 
 struct AllocatedImage {

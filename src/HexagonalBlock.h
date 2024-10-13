@@ -1,19 +1,20 @@
 #pragma once
 
 #include "EngineTypes.h"
-#include "Engine.h"
 
 class HexagonalBlock
 {
 	
 public:
-	std::array<Vertex, 38> vertices;
-	std::array<uint32_t, 72> indices;
-	glm::mat4 defaultMatrix = glm::mat4(1.f);
-	glm::mat4 inverseMatrix = glm::mat4(1.f);
+	static std::array<Vertex, 38> vertices;
+	static std::array<uint32_t, 72> indices;
+	static glm::mat4 defaultMatrix;
+	static glm::mat4 inverseMatrix;
 
-	HexagonalBlock()
+	static void Initialize()
 	{
+		defaultMatrix = glm::mat4(1.f);
+		inverseMatrix = glm::mat4(1.f);
 		//default rotations
 		defaultMatrix = glm::translate(defaultMatrix, glm::vec3(0, 1, 0));
 		defaultMatrix = glm::rotate(defaultMatrix, glm::radians(-90.f), glm::vec3(0, 1, 0));
@@ -39,6 +40,7 @@ public:
 		for (int i = 0; i < 7; i++)
 		{
 			vertices[i].textureID = 1;
+			vertices[i].normal = glm::vec3(0, 0, -1);
 		}
 
 		vertices[0].uv_x = 0.5f;
@@ -99,6 +101,7 @@ public:
 		for (int i = 7; i < 14; i++)
 		{
 			vertices[i].textureID = 0;
+			vertices[i].normal = glm::vec3(0, 0, 1);
 		}
 
 		vertices[7].uv_x = 0.5f;
@@ -124,28 +127,28 @@ public:
 
 
 		indices[18] = 7;
-		indices[19] = 8;
-		indices[20] = 9;
+		indices[19] = 9;
+		indices[20] = 8;
 
 		indices[21] = 7;
-		indices[22] = 9;
-		indices[23] = 10;
+		indices[22] = 10;
+		indices[23] = 9;
 
 		indices[24] = 7;
-		indices[25] = 10;
-		indices[26] = 11;
+		indices[25] = 11;
+		indices[26] = 10;
 
 		indices[27] = 7;
-		indices[28] = 11;
-		indices[29] = 12;
+		indices[28] = 12;
+		indices[29] = 11;
 
 		indices[30] = 7;
-		indices[31] = 12;
-		indices[32] = 13;
+		indices[31] = 13;
+		indices[32] = 12;
 
 		indices[33] = 7;
-		indices[34] = 13;
-		indices[35] = 8;
+		indices[34] = 8;
+		indices[35] = 13;
 
 
 		//SIDES
@@ -179,6 +182,7 @@ public:
 		for (int i = 14; i < 18; i++)
 		{
 			vertices[i].textureID = 0;
+			vertices[i].normal = glm::vec3(glm::sin(60), 0.5f, 0);
 		}
 
 		//TR TL
@@ -210,6 +214,7 @@ public:
 		for (int i = 18; i < 22; i++)
 		{
 			vertices[i].textureID = 0;
+			vertices[i].normal = glm::vec3(0, 1, 0);
 		}
 
 		//TL L
@@ -242,6 +247,7 @@ public:
 		for (int i = 22; i < 26; i++)
 		{
 			vertices[i].textureID = 0;
+			vertices[i].normal = glm::vec3(-glm::sin(60), 0.5f, 0);
 		}
 
 		//L BL
@@ -273,6 +279,7 @@ public:
 		for (int i = 26; i < 30; i++)
 		{
 			vertices[i].textureID = 0;
+			vertices[i].normal = glm::vec3(-glm::sin(60), -0.5f, 0);
 		}
 
 		//BL - BR
@@ -304,6 +311,7 @@ public:
 		for (int i = 30; i < 34; i++)
 		{
 			vertices[i].textureID = 0;
+			vertices[i].normal = glm::vec3(0, -1, 0);
 		}
 
 		//BR R
@@ -335,6 +343,7 @@ public:
 		for (int i = 34; i < 38; i++)
 		{
 			vertices[i].textureID = 0;
+			vertices[i].normal = glm::vec3(glm::sin(60), -0.5f, 0);
 		}
 		/*
 		vertices[14].position = { 0.5f, 0, 0 }; // right
@@ -356,7 +365,7 @@ public:
 
 	}
 
-	glm::mat4 translate(glm::vec3 target)
+	static glm::mat4 translate(glm::vec3 target)
 	{
 		return glm::translate(inverseMatrix, target) * defaultMatrix;
 	}

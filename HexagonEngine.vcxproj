@@ -156,6 +156,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\Camera.h" />
+    <ClInclude Include="src\Circle.h" />
     <ClInclude Include="src\Engine.h" />
     <ClInclude Include="src\EngineDescriptors.h" />
     <ClInclude Include="src\EngineImages.h" />
@@ -168,12 +169,14 @@
     <ClInclude Include="src\World.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="shaders\debug_object.frag" />
+    <None Include="shaders\debug_object.vert" />
     <None Include="shaders\gradient.comp" />
     <None Include="shaders\sky.comp" />
-    <None Include="shaders\tex_image.frag" />
+    <None Include="shaders\hexagon_block.frag" />
     <None Include="shaders\triangle.frag" />
     <None Include="shaders\triangle.vert" />
-    <None Include="shaders\triangle_mesh.vert" />
+    <None Include="shaders\hexagon_block.vert" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

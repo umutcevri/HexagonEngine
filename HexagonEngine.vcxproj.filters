@@ -95,6 +95,9 @@
     <ClInclude Include="src\World.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\Circle.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\gradient.comp">
@@ -109,10 +112,16 @@
     <None Include="shaders\triangle.frag">
       <Filter>Shaders</Filter>
     </None>
-    <None Include="shaders\triangle_mesh.vert">
+    <None Include="shaders\hexagon_block.vert">
       <Filter>Shaders</Filter>
     </None>
-    <None Include="shaders\tex_image.frag">
+    <None Include="shaders\hexagon_block.frag">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\debug_object.vert">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\debug_object.frag">
       <Filter>Shaders</Filter>
     </None>
   </ItemGroup>

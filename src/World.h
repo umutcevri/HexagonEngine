@@ -5,51 +5,79 @@
 #include "HexagonalBlock.h"
 
 
-const int CHUNK_SIZE = 16;
-const int RENDER_DISTANCE = 5;
+const int CHUNK_SIZE = 8;
+const int RENDER_DISTANCE = 10;
 const int MAX_HEIGHT = 15;
 
-const float FREQUENCY = 0.03f;
+const float FREQUENCY = 0.01f;
+
+struct ChunkQueue
+{
+	std::deque<std::function<void()>> chunks;
+
+	void push_function(std::function<void()>&& function) {
+		chunks.push_back(function);
+	}
+
+	void pop_function()
+	{
+		if (!chunks.empty())
+		{
+			chunks.front()();
+			chunks.pop_front();
+		}	
+	}
+
+	void clear()
+	{
+		chunks.clear();
+	}
+};
 
 class World
 {
-	HexagonalBlock blockData;
 
 	std::vector<glm::vec2> chunks;
+	ChunkQueue AddChunkQueue;
+	ChunkQueue RemoveChunkQueue;
 
 	int prevNearestChunkX = std::numeric_limits<int>::max();
 	int prevNearestChunkY = std::numeric_limits<int>::max();
 
 public:
 
-	void UpdateChunks(glm::vec3 playerPos, std::vector<Block> &blocks)
+	void UpdateChunks(glm::vec3 playerPos, std::vector<Object> &blocks)
 	{
-		int nearestChunkX = glm::round(playerPos.x / (CHUNK_SIZE * glm::sqrt(3.f)));
-		int nearestChunkY = glm::round(playerPos.z / (CHUNK_SIZE * 1.5f));
+		int nearestChunkX = glm::round(playerPos.x / (CHUNK_SIZE * 2.f * glm::sqrt(3.f)));
+		int nearestChunkY = glm::round(playerPos.z / (CHUNK_SIZE * 2.f * 1.5f));
 
 		if (nearestChunkX == prevNearestChunkX && nearestChunkY == prevNearestChunkY)
 		{
+			AddChunkQueue.pop_function();
+			RemoveChunkQueue.pop_function();
 			return;
 		}
+
+		AddChunkQueue.clear();
+		RemoveChunkQueue.clear();
 
 		prevNearestChunkX = nearestChunkX;
 		prevNearestChunkY = nearestChunkY;
 
-
-		std::vector<int> chunksIDsToRemove;
-
 		for (int i = 0; i < chunks.size(); i++)
 		{
-			if ((chunks[i].x > (nearestChunkX + RENDER_DISTANCE) || chunks[i].x < (nearestChunkX - RENDER_DISTANCE)) && (chunks[i].y > (nearestChunkY + RENDER_DISTANCE) || chunks[i].y < (nearestChunkY - RENDER_DISTANCE)))
+			if (chunks[i].x > (nearestChunkX + RENDER_DISTANCE) || chunks[i].x < (nearestChunkX - RENDER_DISTANCE) || chunks[i].y >(nearestChunkY + RENDER_DISTANCE) || chunks[i].y < (nearestChunkY - RENDER_DISTANCE))
 			{
-				std::cout << "ahash" << std::endl;
-				chunksIDsToRemove.push_back(i);
-				//chunks.erase(std::remove(chunks.begin(), chunks.end(), chunks[i]), chunks.end());
-				//RemoveChunk(chunks[i].x, chunks[i].y, blocks);
+				glm::vec2 removeChunk = chunks[i];
+
+				RemoveChunkQueue.push_function([this, removeChunk, &blocks]() {
+					chunks.erase(std::remove(chunks.begin(), chunks.end(), removeChunk), chunks.end());
+					RemoveChunk(removeChunk.x, removeChunk.y, blocks);
+					});
 			}
 		}
 
-		//removeChunksFromIDArray(chunksIDsToRemove);
+		RemoveChunkQueue.pop_function();
 
 		for (int x = -RENDER_DISTANCE; x <= RENDER_DISTANCE; x++)
 		{
@@ -57,20 +85,23 @@ public:
 			{
 				glm::vec2 chunkID(nearestChunkX + x, nearestChunkY + y);
 
-				if (!containsChunk(chunks, chunkID))
-				{
+				if (containsChunk(chunks, chunkID))
+					continue;
+			
+				AddChunkQueue.push_function([this, chunkID, &blocks]() {
 					chunks.push_back(chunkID);
-					AddChunk(nearestChunkX + x, nearestChunkY + y, blocks);
-				}				
-				
+					AddChunk(chunkID.x, chunkID.y, blocks);
+				});								
 			}
 		}
+
+		AddChunkQueue.pop_function();
 	}
 
-	void AddChunk(int chunkX, int chunkY, std::vector<Block> &blocks)
+	void AddChunk(int chunkX, int chunkY, std::vector<Object> &blocks)
 	{
 		//std::cout << chunkX << " " << chunkY << std::endl;
-		glm::vec3 chunkCenter = glm::vec3(chunkX * ((CHUNK_SIZE) * glm::sqrt(3.f)), 0, chunkY * ((CHUNK_SIZE) * 1.5f));
+		glm::vec3 chunkCenter = glm::vec3(chunkX * (CHUNK_SIZE * 2.f * glm::sqrt(3.f)), 0, chunkY * (CHUNK_SIZE * 2.f * 1.5f));
 
 		int a = 0;
 
@@ -81,22 +112,26 @@ public:
 				if ((x + y) % 2 == 0)
 				{
 					a++;
-					glm::vec3 position(x * 0.5 * glm::sqrt(3.f), 0, y * 1.5f);
+					glm::vec3 position(x * 0.5f * glm::sqrt(3.f), 0, y * 1.5f);
 
 					position += chunkCenter;
 
 					int maxHeight = CalculateHeight(glm::vec2(position.x, position.z));
 
-					for (int h = maxHeight; h <= maxHeight; h++)
+					for (int h = 0; h <= maxHeight; h++)
 					{
 						position.y = h;
 
-						glm::mat4 modelMatrix = blockData.translate(position);
+						if (h == maxHeight || checkAround(position))
+						{
+							glm::mat4 modelMatrix = HexagonalBlock::translate(position);
 
-						Block block;
-						block.chunkID = glm::vec2(chunkX, chunkY);
-						block.renderMatrix = modelMatrix;
-						blocks.push_back(block);
+							Object block;
+							block.chunkID = glm::vec2(chunkX, chunkY);
+							block.renderMatrix = modelMatrix;
+							block.blockCoords = glm::vec3(position.x, h, position.z);
+							blocks.push_back(block);
+						}	
 					}
 				}
 							
@@ -105,7 +140,7 @@ public:
 		//std::cout << a << std::endl;
 	}
 
-	void RemoveChunk(int chunkX, int chunkY, std::vector<Block>& blocks)
+	void RemoveChunk(int chunkX, int chunkY, std::vector<Object>& blocks)
 	{
 		glm::vec2 targetChunkID = glm::vec2(chunkX, chunkY);
 
@@ -113,7 +148,7 @@ public:
 			std::remove_if(
 				blocks.begin(),
 				blocks.end(),
-				[&targetChunkID](const Block& block) {
+				[&targetChunkID](const Object& block) {
 					return block.chunkID == targetChunkID;
 				}),
 			blocks.end()
@@ -133,11 +168,41 @@ public:
 		return std::find(array.begin(), array.end(), target) != array.end();
 	}
 
-	void removeChunksFromIDArray(std::vector<int> &array)
+	void removeChunksFromArray(std::vector<glm::vec2> &array)
 	{
-		for (auto& index : array)
+		for (auto &chunk : array)
 		{
-			chunks.erase(chunks.begin() + index);
+			chunks.erase(std::remove(chunks.begin(), chunks.end(), chunk), chunks.end());
 		}
+	}
+
+	bool checkAround(glm::vec3 coords)
+	{
+		if (CalculateHeight(glm::vec2(coords.x + glm::sqrt(3.0f), coords.z)) < coords.y)
+		{
+			return true;
+		}
+		if (CalculateHeight(glm::vec2(coords.x - glm::sqrt(3.0f), coords.z)) < coords.y)
+		{
+			return true;
+		}
+		if (CalculateHeight(glm::vec2(coords.x + (0.5f * glm::sqrt(3.0f)), coords.z + 1.5f)) < coords.y)
+		{
+			return true;
+		}
+		if (CalculateHeight(glm::vec2(coords.x - (0.5f * glm::sqrt(3.0f)), coords.z + 1.5f)) < coords.y)
+		{
+			return true;
+		}
+		if (CalculateHeight(glm::vec2(coords.x + (0.5f * glm::sqrt(3.0f)), coords.z - 1.5f)) < coords.y)
+		{
+			return true;
+		}
+		if (CalculateHeight(glm::vec2(coords.x - (0.5f * glm::sqrt(3.0f)), coords.z - 1.5f)) < coords.y)
+		{
+			return true;
+		}
+
+		return false;
 	}
 };
