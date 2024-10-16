@@ -167,6 +167,8 @@ public:
 
 	void SetFOV(float _fov);
 
+	ObjectBufferData* getObjectBufferData();
+
 private:
 	void create_swapchain(uint32_t width, uint32_t height);
 	void destroy_swapchain();

@@ -37,24 +37,13 @@ public:
 		Engine.init();
 
 		Engine.create_mesh(HexagonalBlock::indices, HexagonalBlock::vertices);
-		Engine.create_mesh(Circle::indices, Circle::vertices);
+		//Engine.create_mesh(Circle::indices, Circle::vertices);
 
 		Engine.renderObjectBufferDelete();
 
-		Object o;
-		glm::mat4 modelMatrix(1.f);
-		modelMatrix = glm::translate(modelMatrix, player.GetPosition());
-		//modelMatrix = glm::scale(modelMatrix, glm::vec3(0, 0, 0));
-
-		o.isSolidColor = true;
-		o.color = glm::vec3(1, 0, 1);
-		o.renderMatrix = modelMatrix;
-
-		Engine.renderObjects[1].instances.push_back(o);
-
-		world.UpdateChunks(player.GetPosition(), Engine.renderObjects[0].instances);
-
 		Engine.SetFOV(camera.FoV);
+
+		world.objectBuffer = Engine.getObjectBufferData();
 
 		while (!bQuit)
 		{
@@ -81,9 +70,11 @@ private:
 
 		player.Move(Engine.renderObjects[0].instances);
 
-		world.UpdateChunks(player.GetPosition(), Engine.renderObjects[0].instances);
+		world.UpdateChunks(player.GetPosition());
 
-		std::cout << Engine.renderObjects[0].instances.size() << std::endl;
+		Engine.renderObjects[0].instanceCount = world.chunkInstanceCount;
+
+		std::cout << world.chunkInstanceCount << std::endl;
 
 		glm::mat4 modelMatrix(1.f);
 		modelMatrix = glm::translate(modelMatrix, player.GetPosition() + glm::vec3(0, 0.01f, 0));

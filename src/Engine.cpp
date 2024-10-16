@@ -87,6 +87,8 @@ void HexagonEngine::cleanup()
         //make sure the gpu has stopped doing its things
         vkDeviceWaitIdle(_device);
 
+        vmaUnmapMemory(_allocator, get_current_frame().objectBuffer.allocation);
+
         for (int i = 0; i < FRAME_OVERLAP; i++) {
             vkDestroyCommandPool(_device, _frames[i]._commandPool, nullptr);
 
@@ -114,27 +116,8 @@ void HexagonEngine::cleanup()
 
 void HexagonEngine::draw()
 {
-    void* objectData;
-    vmaMapMemory(_allocator, get_current_frame().objectBuffer.allocation, &objectData);
-
-    ObjectBufferData* objectSSBO = (ObjectBufferData*)objectData;
-
-    int i = 0;
-    for (auto &renderObject : renderObjects)
-    {
-        for (auto& objectInstance : renderObject.instances)
-        {
-            ObjectBufferData data;
-            data.renderMatrix = objectInstance.renderMatrix;
-            data.color = objectInstance.color;
-            data.isSolidColor = objectInstance.isSolidColor;
-
-            objectSSBO[i] = data;
-            i++;
-        }       
-    }
-
-    vmaUnmapMemory(_allocator, get_current_frame().objectBuffer.allocation);
+  
+    //vmaUnmapMemory(_allocator, get_current_frame().objectBuffer.allocation);
 
 
     VK_CHECK(vkWaitForFences(_device, 1, &get_current_frame()._renderFence, true, 1000000000));
@@ -303,7 +286,7 @@ void HexagonEngine::draw_mesh(VkCommandBuffer cmd)
 
         vkCmdBindIndexBuffer(cmd, renderObject.buffers.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
 
-        vkCmdDrawIndexed(cmd, renderObject.indexCount, renderObject.instances.size(), 0, 0, i);
+        vkCmdDrawIndexed(cmd, renderObject.indexCount, renderObject.instanceCount, 0, 0, i);
         i += renderObject.instances.size();
     }
     
@@ -1153,4 +1136,13 @@ void HexagonEngine::SetViewMatrix(glm::mat4 matrix)
 void HexagonEngine::SetFOV(float _fov)
 {
     fov = _fov;
+}
+
+ObjectBufferData* HexagonEngine::getObjectBufferData()
+{
+    void* objectData;
+
+    vmaMapMemory(_allocator, get_current_frame().objectBuffer.allocation, &objectData);
+    
+    return (ObjectBufferData*)objectData;
 }

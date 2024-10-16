@@ -21,7 +21,7 @@
 #include <glm/packing.hpp>
 
 #define ARRAY_MAX_TEXTURE_COUNT 256
-#define MAX_OBJECT_COUNT 1000000
+#define MAX_OBJECT_COUNT 20000000
 
 struct AllocatedBuffer {
     VkBuffer buffer;
@@ -74,6 +74,7 @@ struct RenderObject
     GPUMeshBuffers buffers;
     std::vector<Object> instances;
     int indexCount;
+    int instanceCount;
 
     RenderObject(GPUMeshBuffers b, int indexcount) : buffers(b), indexCount(indexcount){}
 };

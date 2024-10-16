@@ -6,10 +6,18 @@
 
 
 const int CHUNK_SIZE = 8;
-const int RENDER_DISTANCE = 10;
-const int MAX_HEIGHT = 15;
+const int RENDER_DISTANCE = 20;
+const int MAX_HEIGHT = 100;
 
 const float FREQUENCY = 0.01f;
+
+struct Vec2Comparator {
+	bool operator()(const glm::vec2& lhs, const glm::vec2& rhs) const {
+		if (lhs.x != rhs.x)
+			return lhs.x < rhs.x;
+		return lhs.y < rhs.y;
+	}
+};
 
 struct ChunkQueue
 {
@@ -36,17 +44,21 @@ struct ChunkQueue
 
 class World
 {
-
-	std::vector<glm::vec2> chunks;
 	ChunkQueue AddChunkQueue;
 	ChunkQueue RemoveChunkQueue;
 
 	int prevNearestChunkX = std::numeric_limits<int>::max();
 	int prevNearestChunkY = std::numeric_limits<int>::max();
 
+	std::map<glm::vec2, std::vector<int>, Vec2Comparator> chunks;
+	std::vector<int> emptyIndexes;
+
 public:
 
-	void UpdateChunks(glm::vec3 playerPos, std::vector<Object> &blocks)
+	ObjectBufferData* objectBuffer;
+	int chunkInstanceCount = 0;
+
+	void UpdateChunks(glm::vec3 playerPos)
 	{
 		int nearestChunkX = glm::round(playerPos.x / (CHUNK_SIZE * 2.f * glm::sqrt(3.f)));
 		int nearestChunkY = glm::round(playerPos.z / (CHUNK_SIZE * 2.f * 1.5f));
@@ -54,56 +66,55 @@ public:
 		if (nearestChunkX == prevNearestChunkX && nearestChunkY == prevNearestChunkY)
 		{
 			AddChunkQueue.pop_function();
-			RemoveChunkQueue.pop_function();
 			return;
 		}
 
 		AddChunkQueue.clear();
-		RemoveChunkQueue.clear();
 
 		prevNearestChunkX = nearestChunkX;
 		prevNearestChunkY = nearestChunkY;
-
-		for (int i = 0; i < chunks.size(); i++)
+	
+		std::vector<glm::vec2> chunksToRemove;
+		for (auto& chunk : chunks)
 		{
-			if (chunks[i].x > (nearestChunkX + RENDER_DISTANCE) || chunks[i].x < (nearestChunkX - RENDER_DISTANCE) || chunks[i].y >(nearestChunkY + RENDER_DISTANCE) || chunks[i].y < (nearestChunkY - RENDER_DISTANCE))
-			{
-				glm::vec2 removeChunk = chunks[i];
+			glm::vec2 chunkCoord = chunk.first;
 
-				RemoveChunkQueue.push_function([this, removeChunk, &blocks]() {
-					chunks.erase(std::remove(chunks.begin(), chunks.end(), removeChunk), chunks.end());
-					RemoveChunk(removeChunk.x, removeChunk.y, blocks);
-					});
+			if (chunkCoord.x > (nearestChunkX + RENDER_DISTANCE) || chunkCoord.x < (nearestChunkX - RENDER_DISTANCE) || chunkCoord.y >(nearestChunkY + RENDER_DISTANCE) || chunkCoord.y < (nearestChunkY - RENDER_DISTANCE))
+			{
+				chunksToRemove.push_back(chunkCoord);
+				emptyIndexes.insert(emptyIndexes.begin(), chunk.second.begin(), chunk.second.end());
 			}
 		}
 
-		RemoveChunkQueue.pop_function();
+		for (glm::vec2 key : chunksToRemove) {
+			chunks.erase(key);
+		}
 
 		for (int x = -RENDER_DISTANCE; x <= RENDER_DISTANCE; x++)
 		{
 			for (int y = -RENDER_DISTANCE; y <= RENDER_DISTANCE; y++)
 			{
+
 				glm::vec2 chunkID(nearestChunkX + x, nearestChunkY + y);
 
-				if (containsChunk(chunks, chunkID))
+				if (chunks.find(chunkID) != chunks.end())
 					continue;
-			
-				AddChunkQueue.push_function([this, chunkID, &blocks]() {
-					chunks.push_back(chunkID);
-					AddChunk(chunkID.x, chunkID.y, blocks);
-				});								
+
+				AddChunkQueue.push_function([this, chunkID]() {
+					chunks.emplace(chunkID, AddChunk(chunkID.x, chunkID.y));
+					});
+				
 			}
 		}
 
 		AddChunkQueue.pop_function();
 	}
 
-	void AddChunk(int chunkX, int chunkY, std::vector<Object> &blocks)
+	std::vector<int> AddChunk(int chunkX, int chunkY)
 	{
-		//std::cout << chunkX << " " << chunkY << std::endl;
-		glm::vec3 chunkCenter = glm::vec3(chunkX * (CHUNK_SIZE * 2.f * glm::sqrt(3.f)), 0, chunkY * (CHUNK_SIZE * 2.f * 1.5f));
+		std::vector<int> bufferIndexes;
 
-		int a = 0;
+		glm::vec3 chunkCenter = glm::vec3(chunkX * (CHUNK_SIZE * 2.f * glm::sqrt(3.f)), 0, chunkY * (CHUNK_SIZE * 2.f * 1.5f));
 
 		for (int x = -(CHUNK_SIZE) * 2; x < (CHUNK_SIZE) * 2; x++)
 		{
@@ -111,7 +122,6 @@ public:
 			{
 				if ((x + y) % 2 == 0)
 				{
-					a++;
 					glm::vec3 position(x * 0.5f * glm::sqrt(3.f), 0, y * 1.5f);
 
 					position += chunkCenter;
@@ -126,54 +136,46 @@ public:
 						{
 							glm::mat4 modelMatrix = HexagonalBlock::translate(position);
 
+							/*
 							Object block;
 							block.chunkID = glm::vec2(chunkX, chunkY);
 							block.renderMatrix = modelMatrix;
 							block.blockCoords = glm::vec3(position.x, h, position.z);
 							blocks.push_back(block);
+							*/
+
+							ObjectBufferData bufferData;
+							bufferData.renderMatrix = modelMatrix;
+
+							if (emptyIndexes.size() == 0)
+							{
+								objectBuffer[chunkInstanceCount] = bufferData;
+								bufferIndexes.push_back(chunkInstanceCount);
+								chunkInstanceCount++;
+							}
+							else
+							{
+								objectBuffer[emptyIndexes.back()] = bufferData;
+								bufferIndexes.push_back(emptyIndexes.back());
+								emptyIndexes.pop_back();
+							}
+
 						}	
 					}
 				}
 							
 			}
 		}
-		//std::cout << a << std::endl;
-	}
-
-	void RemoveChunk(int chunkX, int chunkY, std::vector<Object>& blocks)
-	{
-		glm::vec2 targetChunkID = glm::vec2(chunkX, chunkY);
-
-		blocks.erase(
-			std::remove_if(
-				blocks.begin(),
-				blocks.end(),
-				[&targetChunkID](const Object& block) {
-					return block.chunkID == targetChunkID;
-				}),
-			blocks.end()
-		);
+		return bufferIndexes;
 	}
 
 	static int CalculateHeight(glm::vec2 position)
 	{
 		float noiseValue = SimplexNoise::noise(position.x * FREQUENCY, position.y * FREQUENCY);
 
-		int height = static_cast<int>((noiseValue + 1.0f) * 0.5f * MAX_HEIGHT);
+		int height = static_cast<int>((noiseValue + 1.0f) * 0.5f * (MAX_HEIGHT - 1));
 
 		return height;
-	}
-
-	bool containsChunk(const std::vector<glm::vec2>& array, const glm::vec2& target) {
-		return std::find(array.begin(), array.end(), target) != array.end();
-	}
-
-	void removeChunksFromArray(std::vector<glm::vec2> &array)
-	{
-		for (auto &chunk : array)
-		{
-			chunks.erase(std::remove(chunks.begin(), chunks.end(), chunk), chunks.end());
-		}
 	}
 
 	bool checkAround(glm::vec3 coords)
