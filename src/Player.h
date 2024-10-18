@@ -21,7 +21,7 @@ glm::vec2 hexagonVertices[6] = {
     {0.5f * glm::sqrt(3), -0.5f}
 };
 
-const float MOVEMENT_SPEED = 1000.f;
+const float MOVEMENT_SPEED = 50.f;
 const float colliderRadius = 0.4f;
 const float colliderHeight = 1.8f;
 

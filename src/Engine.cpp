@@ -116,8 +116,6 @@ void HexagonEngine::cleanup()
 
 void HexagonEngine::draw()
 {
-  
-    //vmaUnmapMemory(_allocator, get_current_frame().objectBuffer.allocation);
 
 
     VK_CHECK(vkWaitForFences(_device, 1, &get_current_frame()._renderFence, true, 1000000000));
@@ -152,6 +150,8 @@ void HexagonEngine::draw()
     VKUtil::transition_image(cmd, _drawImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
 
     draw_background(cmd);
+
+    compute_culling(cmd);
 
     VKUtil::transition_image(cmd, _drawImage.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     VKUtil::transition_image(cmd, _depthImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
@@ -281,16 +281,74 @@ void HexagonEngine::draw_mesh(VkCommandBuffer cmd)
         push_constants.worldMatrix = projection * view;
         push_constants.vertexBuffer = renderObject.buffers.vertexBufferAddress;
         push_constants.objectBuffer = get_current_frame().objectBufferAddress;
+        push_constants.visibleInstanceBuffer = get_current_frame().visibleInstanceBufferAddress;
 
         vkCmdPushConstants(cmd, _meshPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawPushConstants), &push_constants);
 
         vkCmdBindIndexBuffer(cmd, renderObject.buffers.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
 
-        vkCmdDrawIndexed(cmd, renderObject.indexCount, renderObject.instanceCount, 0, 0, i);
+        //vkCmdDrawIndexed(cmd, renderObject.indexCount, renderObject.instanceCount, 0, 0, i);
+        vkCmdDrawIndexedIndirect(cmd, get_current_frame().indirectCommandBuffer.buffer, 0, 1, sizeof(VkDrawIndexedIndirectCommand));
         i += renderObject.instances.size();
     }
     
     vkCmdEndRendering(cmd);
+}
+
+void HexagonEngine::compute_culling(VkCommandBuffer cmd)
+{
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _cullingPipeline);
+
+    VkDescriptorSet descriptorSet = get_current_frame()._frameDescriptors.allocate(_device, _cullingDescriptorLayout);
+
+    DescriptorWriter writer;
+    writer.write_buffer(0, get_current_frame().indirectCommandBuffer.buffer, sizeof(VkDrawIndexedIndirectCommand), 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+    writer.update_set(_device, descriptorSet);
+
+    void* indirectCommandData;
+    vmaMapMemory(_allocator, get_current_frame().indirectCommandBuffer.allocation, &indirectCommandData);
+
+    VkDrawIndexedIndirectCommand* command = (VkDrawIndexedIndirectCommand*)indirectCommandData;
+    std::cout << command->instanceCount << std::endl;
+    command->instanceCount = 0;
+
+    vmaUnmapMemory(_allocator, get_current_frame().indirectCommandBuffer.allocation);
+
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _cullingPipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
+
+    CullingPushConstants push_constants;
+    push_constants.frustumPlanes[0] = frustum.bottomFace;
+    push_constants.frustumPlanes[1] = frustum.topFace;
+    push_constants.frustumPlanes[2] = frustum.leftFace;
+    push_constants.frustumPlanes[3] = frustum.rightFace;
+    push_constants.frustumPlanes[4] = frustum.nearFace;
+    push_constants.frustumPlanes[5] = frustum.farFace;
+
+    push_constants.objectBuffer = get_current_frame().objectBufferAddress;
+    push_constants.visibleInstanceBuffer = get_current_frame().visibleInstanceBufferAddress;
+
+    vkCmdPushConstants(cmd, _cullingPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(CullingPushConstants), &push_constants);
+
+    // Dispatch the compute shader
+    uint32_t groupCount = (renderObjects[0].instanceCount) / WORKGROUP_SIZE;
+    //std::cout << groupCount << std::endl;
+    vkCmdDispatch(cmd, groupCount, 1, 1);
+
+    // Insert memory barrier to ensure compute shader writes are visible to graphics pipeline
+    VkMemoryBarrier computeToGraphicsBarrier = {};
+    computeToGraphicsBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    computeToGraphicsBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    computeToGraphicsBarrier.dstAccessMask = VK_ACCESS_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_SHADER_READ_BIT;
+
+    vkCmdPipelineBarrier(
+        cmd,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
+        0,
+        1, &computeToGraphicsBarrier,
+        0, nullptr,
+        0, nullptr
+    );
 }
 
 void HexagonEngine::render()
@@ -597,10 +655,18 @@ void HexagonEngine::init_descriptors()
         _singleImageDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_FRAGMENT_BIT);
     }
 
+
+    {
+        DescriptorLayoutBuilder builder;
+        builder.add_binding(0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+        _cullingDescriptorLayout = builder.build(_device, VK_SHADER_STAGE_COMPUTE_BIT);
+    }
+
     //make sure both the descriptor allocator and the new layout get cleaned up properly
     _mainDeletionQueue.push_function([&]() {     
         vkDestroyDescriptorSetLayout(_device, _drawImageDescriptorLayout, nullptr);
         vkDestroyDescriptorSetLayout(_device, _singleImageDescriptorLayout, nullptr);
+        vkDestroyDescriptorSetLayout(_device, _cullingDescriptorLayout, nullptr);
         });
 
     for (int i = 0; i < FRAME_OVERLAP; i++) {
@@ -621,17 +687,57 @@ void HexagonEngine::init_descriptors()
     }
 
     for (int i = 0; i < FRAME_OVERLAP; i++) {
-        
+
+        //create object buffer
         const size_t objectBufferSize = MAX_OBJECT_COUNT * sizeof(ObjectBufferData);
 
         _frames[i].objectBuffer = create_buffer(objectBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
             VMA_MEMORY_USAGE_CPU_TO_GPU);
 
-        VkBufferDeviceAddressInfo deviceAdressInfoM{ .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,.buffer = _frames[i].objectBuffer.buffer };
-        _frames[i].objectBufferAddress = vkGetBufferDeviceAddress(_device, &deviceAdressInfoM);
+        {
+            VkBufferDeviceAddressInfo deviceAdressInfoM{ .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,.buffer = _frames[i].objectBuffer.buffer };
+            _frames[i].objectBufferAddress = vkGetBufferDeviceAddress(_device, &deviceAdressInfoM);
+        }
+
+        //create visible instance buffer
+
+        const size_t visibleBufferSize = MAX_OBJECT_COUNT * sizeof(int);
+
+        _frames[i].visibleInstanceBuffer = create_buffer(visibleBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+            VMA_MEMORY_USAGE_GPU_ONLY);
+        {
+            VkBufferDeviceAddressInfo deviceAdressInfoM{ .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,.buffer = _frames[i].visibleInstanceBuffer.buffer };
+            _frames[i].visibleInstanceBufferAddress = vkGetBufferDeviceAddress(_device, &deviceAdressInfoM);
+        }
+
+        //create indirect command buffer
+
+        const size_t indirectBufferSize = sizeof(VkDrawIndexedIndirectCommand);
+
+        _frames[i].indirectCommandBuffer = create_buffer(indirectBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
+            VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+        void* indirectCommandData;
+        vmaMapMemory(_allocator, get_current_frame().indirectCommandBuffer.allocation, &indirectCommandData);
+
+        VkDrawIndexedIndirectCommand initialIndirectCommand = {};
+        initialIndirectCommand.indexCount = 72;      // Number of indices per instance
+        initialIndirectCommand.instanceCount = 0;           // Will be updated by compute shader
+        initialIndirectCommand.firstIndex = 0;
+        initialIndirectCommand.vertexOffset = 0;
+        initialIndirectCommand.firstInstance = 0;
+
+
+        VkDrawIndexedIndirectCommand* command = (VkDrawIndexedIndirectCommand*)indirectCommandData;
+        *command = initialIndirectCommand;
+
+        vmaUnmapMemory(_allocator, get_current_frame().indirectCommandBuffer.allocation);
+        
 
         _mainDeletionQueue.push_function([&, i]() {
             destroy_buffer(_frames[i].objectBuffer);
+            destroy_buffer(_frames[i].visibleInstanceBuffer);
+            destroy_buffer(_frames[i].indirectCommandBuffer);
             });
     }
 
@@ -640,6 +746,9 @@ void HexagonEngine::init_descriptors()
 void HexagonEngine::init_pipelines()
 {
     init_background_pipelines();
+
+    init_culling_pipeline();
+
     init_mesh_pipeline();
 }
 
@@ -962,6 +1071,52 @@ void HexagonEngine::init_mesh_pipeline()
     _mainDeletionQueue.push_function([&]() {
         vkDestroyPipelineLayout(_device, _meshPipelineLayout, nullptr);
         vkDestroyPipeline(_device, _meshPipeline, nullptr);
+        });
+}
+
+void HexagonEngine::init_culling_pipeline()
+{
+    VkPipelineLayoutCreateInfo computeLayout{};
+    computeLayout.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    computeLayout.pNext = nullptr;
+    computeLayout.pSetLayouts = &_cullingDescriptorLayout;
+    computeLayout.setLayoutCount = 1;
+
+    VkPushConstantRange pushConstant{};
+    pushConstant.offset = 0;
+    pushConstant.size = sizeof(CullingPushConstants);
+    pushConstant.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+    computeLayout.pPushConstantRanges = &pushConstant;
+    computeLayout.pushConstantRangeCount = 1;
+
+    VK_CHECK(vkCreatePipelineLayout(_device, &computeLayout, nullptr, &_cullingPipelineLayout));
+
+    VkShaderModule cullShader;
+    if (!VKUtil::load_shader_module("shaders/cull.comp.spv", _device, &cullShader)) {
+        std::cout << "Error when building the compute shader \n";
+    }
+
+    VkPipelineShaderStageCreateInfo stageinfo{};
+    stageinfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stageinfo.pNext = nullptr;
+    stageinfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    stageinfo.module = cullShader;
+    stageinfo.pName = "main";
+
+    VkComputePipelineCreateInfo computePipelineCreateInfo{};
+    computePipelineCreateInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    computePipelineCreateInfo.pNext = nullptr;
+    computePipelineCreateInfo.layout = _cullingPipelineLayout;
+    computePipelineCreateInfo.stage = stageinfo;
+
+    VK_CHECK(vkCreateComputePipelines(_device, VK_NULL_HANDLE, 1, &computePipelineCreateInfo, nullptr, &_cullingPipeline));
+
+    vkDestroyShaderModule(_device, cullShader, nullptr);
+    
+    _mainDeletionQueue.push_function([=]() {
+        vkDestroyPipelineLayout(_device, _cullingPipelineLayout, nullptr);
+        vkDestroyPipeline(_device, _cullingPipeline, nullptr);
         });
 }
 

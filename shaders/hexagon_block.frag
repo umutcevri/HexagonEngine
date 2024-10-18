@@ -22,9 +22,9 @@ void main()
   	
     // diffuse 
     vec3 norm = normalize(inNormal);
-    vec3 lightDir = normalize(vec3(0.25,-1,0));
+    vec3 lightDir = normalize(vec3(0.25, -1, 0));
     float diff = max(dot(norm, lightDir), 0.0);
-    vec3 diffuse = 2.f * diff * vec3(1,1,1);
+    vec3 diffuse = 2.f * diff * vec3(1, 0.816, 0);
     
     // specular
     /*

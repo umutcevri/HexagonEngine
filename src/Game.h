@@ -70,11 +70,11 @@ private:
 
 		player.Move(Engine.renderObjects[0].instances);
 
-		world.UpdateChunks(player.GetPosition());
+		world.UpdateChunks(glm::vec3(0));
 
 		Engine.renderObjects[0].instanceCount = world.chunkInstanceCount;
 
-		std::cout << world.chunkInstanceCount << std::endl;
+		//std::cout << world.chunkInstanceCount << std::endl;
 
 		glm::mat4 modelMatrix(1.f);
 		modelMatrix = glm::translate(modelMatrix, player.GetPosition() + glm::vec3(0, 0.01f, 0));
@@ -84,6 +84,8 @@ private:
 		camera.updatePosition(player.GetPosition());
 
 		Engine.SetViewMatrix(camera.GetViewMatrix());
+		
+		Engine.frustum = createFrustumFromCamera(camera, Engine._windowExtent.width / Engine._windowExtent.height, glm::radians(camera.FoV), 0.1f, 10000.f);
 
 		Engine.render();
 
@@ -112,6 +114,28 @@ private:
 		SDL_GetRelativeMouseState(&xPos, &yPos);
 
 		camera.ProcessMouseMovement(xPos, -yPos);
+	}
+
+	Frustum createFrustumFromCamera(const Camera& cam, float aspect, float fovY,
+		float zNear, float zFar)
+	{
+		Frustum frustum;
+		const float halfVSide = zFar * tanf(fovY * 0.5f);
+		const float halfHSide = zFar * tanf(fovY * 0.5f) * aspect * 2.0f;
+		const glm::vec3 frontMultFar = zFar * cam.Front;
+
+		frustum.nearFace = { cam.Position + zNear * cam.Front, cam.Front };
+		frustum.farFace = { cam.Position + frontMultFar, -cam.Front };
+		frustum.rightFace = { cam.Position,
+								glm::cross(frontMultFar - cam.Right * halfHSide, cam.Up) };
+		frustum.leftFace = { cam.Position,
+								glm::cross(cam.Up,frontMultFar + cam.Right * halfHSide) };
+		frustum.topFace = { cam.Position,
+								glm::cross(cam.Right, frontMultFar - cam.Up * halfVSide) };
+		frustum.bottomFace = { cam.Position,
+								glm::cross(frontMultFar + cam.Up * halfVSide, cam.Right) };
+
+		return frustum;
 	}
 
 

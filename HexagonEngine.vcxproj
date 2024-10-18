@@ -169,6 +169,7 @@
     <ClInclude Include="src\World.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="shaders\cull.comp" />
     <None Include="shaders\debug_object.frag" />
     <None Include="shaders\debug_object.vert" />
     <None Include="shaders\gradient.comp" />

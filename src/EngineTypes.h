@@ -21,7 +21,34 @@
 #include <glm/packing.hpp>
 
 #define ARRAY_MAX_TEXTURE_COUNT 256
-#define MAX_OBJECT_COUNT 20000000
+#define MAX_OBJECT_COUNT 2000000
+#define WORKGROUP_SIZE 64
+
+struct Plane
+{
+    // unit vector
+    glm::vec3 normal = { 0.f, 1.f, 0.f };
+
+    // distance from origin to the nearest point in the plane
+    float distance = 0.f;
+
+    Plane() {}
+    Plane(const glm::vec3& p1, const glm::vec3& norm) : normal(glm::normalize(norm)), distance(glm::dot(normal, p1)){}
+};
+
+struct Frustum
+{
+    Plane topFace;
+    Plane bottomFace;
+
+    Plane rightFace;
+    Plane leftFace;
+
+    Plane farFace;
+    Plane nearFace;
+
+    Frustum() {}
+};
 
 struct AllocatedBuffer {
     VkBuffer buffer;
@@ -67,6 +94,13 @@ struct GPUDrawPushConstants {
     glm::mat4 worldMatrix;
     VkDeviceAddress vertexBuffer;
     VkDeviceAddress objectBuffer;
+    VkDeviceAddress visibleInstanceBuffer;
+};
+
+struct CullingPushConstants {
+    Plane frustumPlanes[6];
+    VkDeviceAddress visibleInstanceBuffer;
+    VkDeviceAddress objectBuffer;
 };
 
 struct RenderObject
@@ -84,6 +118,8 @@ struct ObjectBufferData
     glm::mat4 renderMatrix;
     glm::vec3 color;
     int isSolidColor;
+    glm::vec3 boundingSphereCenter;
+    float boundingSphereRadius;
 };
 
 struct AllocatedImage {

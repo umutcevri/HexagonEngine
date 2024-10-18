@@ -23,6 +23,8 @@ struct ObjectBufferData
     mat4 renderMatrix;
     vec3 color;
     int isSolidColor;
+	vec3 boundingSphereCenter;
+    float boundingSphereRadius;
 };
 
 layout(buffer_reference, std430) readonly buffer VertexBuffer{ 
@@ -33,19 +35,27 @@ layout(buffer_reference, std430) readonly buffer ObjectBuffer {
     ObjectBufferData objects[];
 };
 
+layout(buffer_reference, std430) readonly buffer VisibleInstanceBuffer {
+    uint visibleInstanceIDs[];
+};
+
 //push constants block
 layout( push_constant ) uniform constants
 {	
 	mat4 render_matrix;
 	VertexBuffer vertexBuffer;
 	ObjectBuffer objectBuffer;
+	VisibleInstanceBuffer visibleInstanceBuffer;
 } PushConstants;
 
 void main() 
 {	
 	//load vertex data from device adress
 	Vertex v = PushConstants.vertexBuffer.vertices[gl_VertexIndex];
-	ObjectBufferData o = PushConstants.objectBuffer.objects[gl_InstanceIndex];
+
+	uint instanceID =  PushConstants.visibleInstanceBuffer.visibleInstanceIDs[gl_InstanceIndex];
+    ObjectBufferData o = PushConstants.objectBuffer.objects[instanceID];
+
 	mat4 modelMatrix = o.renderMatrix;
 
 	//output data

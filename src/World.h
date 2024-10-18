@@ -6,8 +6,8 @@
 
 
 const int CHUNK_SIZE = 8;
-const int RENDER_DISTANCE = 20;
-const int MAX_HEIGHT = 100;
+const int RENDER_DISTANCE = 32;
+const int MAX_HEIGHT = 30;
 
 const float FREQUENCY = 0.01f;
 
@@ -79,7 +79,7 @@ public:
 		{
 			glm::vec2 chunkCoord = chunk.first;
 
-			if (chunkCoord.x > (nearestChunkX + RENDER_DISTANCE) || chunkCoord.x < (nearestChunkX - RENDER_DISTANCE) || chunkCoord.y >(nearestChunkY + RENDER_DISTANCE) || chunkCoord.y < (nearestChunkY - RENDER_DISTANCE))
+			if (chunkCoord.x > (nearestChunkX + RENDER_DISTANCE) || chunkCoord.x < (nearestChunkX - RENDER_DISTANCE) || chunkCoord.y > (nearestChunkY + RENDER_DISTANCE) || chunkCoord.y < (nearestChunkY - RENDER_DISTANCE))
 			{
 				chunksToRemove.push_back(chunkCoord);
 				emptyIndexes.insert(emptyIndexes.begin(), chunk.second.begin(), chunk.second.end());
@@ -146,6 +146,8 @@ public:
 
 							ObjectBufferData bufferData;
 							bufferData.renderMatrix = modelMatrix;
+							bufferData.boundingSphereCenter = position + glm::vec3(0, 0.5f, 0);
+							bufferData.boundingSphereRadius = 1.f;
 
 							if (emptyIndexes.size() == 0)
 							{

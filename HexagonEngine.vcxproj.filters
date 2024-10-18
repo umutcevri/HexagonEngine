@@ -124,5 +124,8 @@
     <None Include="shaders\debug_object.frag">
       <Filter>Shaders</Filter>
     </None>
+    <None Include="shaders\cull.comp">
+      <Filter>Shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>

@@ -52,12 +52,19 @@ struct FrameData {
 
 	AllocatedBuffer objectBuffer;
 	VkDeviceAddress objectBufferAddress;
+
+	AllocatedBuffer visibleInstanceBuffer;
+	VkDeviceAddress visibleInstanceBufferAddress;
+
+	AllocatedBuffer indirectCommandBuffer;
 };
 
 constexpr unsigned int FRAME_OVERLAP = 1;
 
 class HexagonEngine {
 public:
+	Frustum frustum;
+
 	bool bQuit = false;
 
 	std::vector<Light> lights;
@@ -72,6 +79,7 @@ public:
 	float lastFrame = 0;
 
 	VkDescriptorSetLayout _singleImageDescriptorLayout;
+	VkDescriptorSetLayout _cullingDescriptorLayout;
 
 	std::vector<AllocatedImage> _images;
 
@@ -99,6 +107,10 @@ public:
 
 	VkPipeline _gradientPipeline;
 	VkPipelineLayout _gradientPipelineLayout;
+
+	VkPipeline _cullingPipeline;
+	VkPipelineLayout _cullingPipelineLayout;
+
 
 	VkDescriptorSet _drawImageDescriptors;
 	VkDescriptorSetLayout _drawImageDescriptorLayout;
@@ -144,6 +156,8 @@ public:
 	void draw_background(VkCommandBuffer cmd);
 
 	void draw_mesh(VkCommandBuffer cmd);
+
+	void compute_culling(VkCommandBuffer cmd);
 
 	void render();
 
@@ -192,11 +206,15 @@ private:
 
 	void init_mesh_pipeline();
 
+	void init_culling_pipeline();
+
 	void resize_swapchain();
 
 	AllocatedImage loadTexture(const char* texturePath);
 
 	void init_sampler();
+
+	
 
 
 };

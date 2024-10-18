@@ -1,0 +1,75 @@
+#version 450
+#extension GL_EXT_buffer_reference : require
+
+struct DrawIndexedIndirectCommand {
+    uint indexCount;
+    uint instanceCount;
+    uint firstIndex;
+    int vertexOffset;
+    uint firstInstance;
+};
+
+struct ObjectBufferData {
+    mat4 renderMatrix;
+    vec3 color;
+    int isSolidColor;
+    vec3 boundingSphereCenter;
+    float boundingSphereRadius;
+};
+
+layout(buffer_reference, std430) readonly buffer ObjectBuffer {
+    ObjectBufferData objects[];
+};
+
+layout(buffer_reference, std430) writeonly buffer VisibleInstanceBuffer {
+    uint visibleInstanceIDs[];
+};
+
+layout(std430, binding = 0) buffer IndirectCommandBuffer {
+    DrawIndexedIndirectCommand drawCommand;
+};
+
+struct Plane {
+    vec3 normal;
+    float distance;
+};
+
+layout(push_constant) uniform constants {
+    Plane frustumPlanes[6];
+    VisibleInstanceBuffer visibleInstanceBuffer;
+    ObjectBuffer objectBuffer;
+} PushConstants;
+
+void main() {
+    uint workGroupID = gl_GlobalInvocationID.x;
+
+    // Bounds check (optional but recommended)
+    //if (instanceID >= objects.length())
+        //return;
+    uint instanceID = workGroupID * 64;
+
+    for(int a = 0; a < 64; a++)
+    {
+        
+        ObjectBufferData instance = PushConstants.objectBuffer.objects[instanceID];
+
+        // Perform frustum culling
+        bool isVisible = true;
+        for (int i = 0; i < 6; ++i) {
+            Plane plane = PushConstants.frustumPlanes[i];
+            float signedDistance = dot(plane.normal, instance.boundingSphereCenter) - plane.distance;
+            if (signedDistance < -instance.boundingSphereRadius) {
+                isVisible = false;
+                break;
+            }
+        }
+
+        if (isVisible) {
+            uint index = atomicAdd(drawCommand.instanceCount, 1);
+            PushConstants.visibleInstanceBuffer.visibleInstanceIDs[index] = instanceID;
+        }
+
+        instanceID++;
+    }
+   
+}
