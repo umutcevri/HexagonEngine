@@ -151,6 +151,10 @@ void HexagonEngine::draw()
 
     draw_background(cmd);
 
+    //VKUtil::transition_image(cmd, _shadowDepthImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+
+    //draw_shadows(cmd);
+
     compute_culling(cmd);
 
     VKUtil::transition_image(cmd, _drawImage.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
@@ -160,6 +164,7 @@ void HexagonEngine::draw()
 
     //transition the draw image and the swapchain image into their correct transfer layouts
     VKUtil::transition_image(cmd, _drawImage.image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+
     VKUtil::transition_image(cmd, _swapchainImages[swapchainImageIndex], VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
     // execute a copy from the draw image into the swapchain
@@ -295,6 +300,58 @@ void HexagonEngine::draw_mesh(VkCommandBuffer cmd)
     vkCmdEndRendering(cmd);
 }
 
+void HexagonEngine::draw_shadows(VkCommandBuffer cmd)
+{
+    VkRenderingAttachmentInfo depthAttachment = VKInit::depth_attachment_info(_shadowDepthImage.imageView, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+    VkRenderingInfo renderInfo = VKInit::rendering_info(_drawExtent, nullptr, &depthAttachment);
+    vkCmdBeginRendering(cmd, &renderInfo);
+
+    //set dynamic viewport and scissor
+    VkViewport viewport = {};
+    viewport.x = 0;
+    viewport.y = 0;
+    viewport.width = _drawExtent.width;
+    viewport.height = _drawExtent.height;
+    viewport.minDepth = 0.f;
+    viewport.maxDepth = 1.f;
+
+    vkCmdSetViewport(cmd, 0, 1, &viewport);
+
+    VkRect2D scissor = {};
+    scissor.offset.x = 0;
+    scissor.offset.y = 0;
+    scissor.extent.width = _drawExtent.width;
+    scissor.extent.height = _drawExtent.height;
+
+    vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _shadowPipeline);
+
+    glm::mat4 lightProjection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, 10000.f, 0.1f);
+
+    lightProjection[1][1] *= -1;
+
+    glm::mat4 lightView = glm::lookAt(glm::vec3(-2.0f, 100.0f, -1.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+
+    int i = 0;
+    for (auto& renderObject : renderObjects)
+    {
+        ShadowPushConstants push_constants;
+        push_constants.lightSourceMatrix = lightProjection * lightView;
+        push_constants.vertexBuffer = renderObject.buffers.vertexBufferAddress;
+        push_constants.objectBuffer = get_current_frame().objectBufferAddress;
+
+        vkCmdPushConstants(cmd, _shadowPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(ShadowPushConstants), &push_constants);
+
+        vkCmdBindIndexBuffer(cmd, renderObject.buffers.indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+
+        vkCmdDrawIndexed(cmd, renderObject.indexCount, renderObject.instanceCount, 0, 0, i);
+        i += renderObject.instances.size();
+    }
+
+    vkCmdEndRendering(cmd);
+}
+
 void HexagonEngine::compute_culling(VkCommandBuffer cmd)
 {
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, _cullingPipeline);
@@ -309,7 +366,7 @@ void HexagonEngine::compute_culling(VkCommandBuffer cmd)
     vmaMapMemory(_allocator, get_current_frame().indirectCommandBuffer.allocation, &indirectCommandData);
 
     VkDrawIndexedIndirectCommand* command = (VkDrawIndexedIndirectCommand*)indirectCommandData;
-    std::cout << command->instanceCount << std::endl;
+    //std::cout << command->instanceCount << std::endl;
     command->instanceCount = 0;
 
     vmaUnmapMemory(_allocator, get_current_frame().indirectCommandBuffer.allocation);
@@ -550,6 +607,19 @@ void HexagonEngine::init_swapchain()
 
     VK_CHECK(vkCreateImageView(_device, &dview_info, nullptr, &_depthImage.imageView));
 
+
+    //shadow depth image
+    _shadowDepthImage.imageFormat = VK_FORMAT_D32_SFLOAT;
+    _shadowDepthImage.imageExtent = drawImageExtent;
+
+    //allocate and create the image
+    vmaCreateImage(_allocator, &dimg_info, &rimg_allocinfo, &_shadowDepthImage.image, &_shadowDepthImage.allocation, nullptr);
+
+    //build a image-view for the draw image to use for rendering
+    dview_info = VKInit::imageview_create_info(_shadowDepthImage.imageFormat, _shadowDepthImage.image, VK_IMAGE_ASPECT_DEPTH_BIT);
+
+    VK_CHECK(vkCreateImageView(_device, &dview_info, nullptr, &_shadowDepthImage.imageView));
+
     //add to deletion queues
     _mainDeletionQueue.push_function([=]() {
         vkDestroyImageView(_device, _drawImage.imageView, nullptr);
@@ -557,6 +627,9 @@ void HexagonEngine::init_swapchain()
 
         vkDestroyImageView(_device, _depthImage.imageView, nullptr);
         vmaDestroyImage(_allocator, _depthImage.image, _depthImage.allocation);
+
+        vkDestroyImageView(_device, _shadowDepthImage.imageView, nullptr);
+        vmaDestroyImage(_allocator, _shadowDepthImage.image, _shadowDepthImage.allocation);
 
     });
 }
@@ -746,6 +819,8 @@ void HexagonEngine::init_descriptors()
 void HexagonEngine::init_pipelines()
 {
     init_background_pipelines();
+
+    init_shadow_pipeline();
 
     init_culling_pipeline();
 
@@ -1014,17 +1089,13 @@ void HexagonEngine::init_mesh_pipeline()
     if (!VKUtil::load_shader_module("shaders/hexagon_block.frag.spv", _device, &meshFragShader)) {
         std::cout << "Error when building the fragment shader \n";
     }
-    else {
-        std::cout << "Triangle fragment shader succesfully loaded \n";
-    }
+   
 
     VkShaderModule meshVertexShader;
     if (!VKUtil::load_shader_module("shaders/hexagon_block.vert.spv", _device, &meshVertexShader)) {
         std::cout << "Error when building the vertex shader \n";
     }
-    else {
-        std::cout << "Triangle vertex shader succesfully loaded \n";
-    }
+    
 
     VkPushConstantRange bufferRange{};
     bufferRange.offset = 0;
@@ -1072,6 +1143,59 @@ void HexagonEngine::init_mesh_pipeline()
         vkDestroyPipelineLayout(_device, _meshPipelineLayout, nullptr);
         vkDestroyPipeline(_device, _meshPipeline, nullptr);
         });
+}
+
+void HexagonEngine::init_shadow_pipeline()
+{
+    VkShaderModule shadowVertexShader;
+    if (!VKUtil::load_shader_module("shaders/shadow.vert.spv", _device, &shadowVertexShader)) {
+        std::cout << "Error when building the vertex shader \n";
+    }
+
+    VkPushConstantRange bufferRange{};
+    bufferRange.offset = 0;
+    bufferRange.size = sizeof(ShadowPushConstants);
+    bufferRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+    VkPipelineLayoutCreateInfo pipeline_layout_info = VKInit::pipeline_layout_create_info();
+    pipeline_layout_info.pPushConstantRanges = &bufferRange;
+    pipeline_layout_info.pushConstantRangeCount = 1;
+    VK_CHECK(vkCreatePipelineLayout(_device, &pipeline_layout_info, nullptr, &_shadowPipelineLayout));
+
+    PipelineBuilder pipelineBuilder;
+
+    //use the triangle layout we created
+    pipelineBuilder._pipelineLayout = _shadowPipelineLayout;
+    //connecting the vertex and pixel shaders to the pipeline
+    pipelineBuilder.set_shaders(shadowVertexShader, nullptr);
+    //it will draw triangles
+    pipelineBuilder.set_input_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+    //filled triangles
+    pipelineBuilder.set_polygon_mode(VK_POLYGON_MODE_FILL);
+    //no backface culling
+    pipelineBuilder.set_cull_mode(VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_CLOCKWISE);
+    //no multisampling
+    pipelineBuilder.set_multisampling_none();
+    //no blending
+    pipelineBuilder.disable_blending();
+
+    pipelineBuilder.enable_depthtest(true, VK_COMPARE_OP_GREATER_OR_EQUAL);
+
+    //connect the image format we will draw into, from draw image
+    //pipelineBuilder.set_color_attachment_format(_drawImage.imageFormat);
+    pipelineBuilder.set_depth_format(_shadowDepthImage.imageFormat);
+
+    //build the pipeline
+    _shadowPipeline = pipelineBuilder.build_pipeline(_device);
+
+    //clean structures
+    vkDestroyShaderModule(_device, shadowVertexShader, nullptr);
+
+    _mainDeletionQueue.push_function([&]() {
+        vkDestroyPipelineLayout(_device, _shadowPipelineLayout, nullptr);
+        vkDestroyPipeline(_device, _shadowPipeline, nullptr);
+        });
+  
 }
 
 void HexagonEngine::init_culling_pipeline()

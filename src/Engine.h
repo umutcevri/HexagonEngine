@@ -84,6 +84,7 @@ public:
 	std::vector<AllocatedImage> _images;
 
 	AllocatedImage _depthImage;
+	AllocatedImage _shadowDepthImage;
 
 	VkSampler _defaultSamplerLinear;
 	VkSampler _defaultSamplerNearest;
@@ -97,6 +98,9 @@ public:
 
 	VkPipelineLayout _meshPipelineLayout;
 	VkPipeline _meshPipeline;
+
+	VkPipelineLayout _shadowPipelineLayout;
+	VkPipeline _shadowPipeline;
 
 	VkFence _immFence;
 	VkCommandBuffer _immCommandBuffer;
@@ -206,6 +210,8 @@ private:
 
 	void init_mesh_pipeline();
 
+	void init_shadow_pipeline();
+
 	void init_culling_pipeline();
 
 	void resize_swapchain();
@@ -213,6 +219,8 @@ private:
 	AllocatedImage loadTexture(const char* texturePath);
 
 	void init_sampler();
+
+	void draw_shadows(VkCommandBuffer cmd);
 
 	
 

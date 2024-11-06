@@ -173,6 +173,7 @@
     <None Include="shaders\debug_object.frag" />
     <None Include="shaders\debug_object.vert" />
     <None Include="shaders\gradient.comp" />
+    <None Include="shaders\shadow.vert" />
     <None Include="shaders\sky.comp" />
     <None Include="shaders\hexagon_block.frag" />
     <None Include="shaders\triangle.frag" />

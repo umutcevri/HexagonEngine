@@ -97,6 +97,12 @@ struct GPUDrawPushConstants {
     VkDeviceAddress visibleInstanceBuffer;
 };
 
+struct ShadowPushConstants {
+    glm::mat4 lightSourceMatrix;
+    VkDeviceAddress objectBuffer;
+    VkDeviceAddress vertexBuffer;
+};
+
 struct CullingPushConstants {
     Plane frustumPlanes[6];
     VkDeviceAddress visibleInstanceBuffer;

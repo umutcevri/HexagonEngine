@@ -70,7 +70,7 @@ private:
 
 		player.Move(Engine.renderObjects[0].instances);
 
-		world.UpdateChunks(glm::vec3(0));
+		world.UpdateChunks(player.GetPosition());
 
 		Engine.renderObjects[0].instanceCount = world.chunkInstanceCount;
 

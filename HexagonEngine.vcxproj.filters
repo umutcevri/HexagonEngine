@@ -127,5 +127,8 @@
     <None Include="shaders\cull.comp">
       <Filter>Shaders</Filter>
     </None>
+    <None Include="shaders\shadow.vert">
+      <Filter>Shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>
